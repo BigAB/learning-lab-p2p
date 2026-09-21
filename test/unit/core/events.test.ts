@@ -51,3 +51,17 @@ test("listener removed during emit does not break iteration", () => {
   t.fire(1);
   assert.equal(calls, 2);
 });
+
+test("a throwing listener does not stop remaining listeners, then rethrows", () => {
+  const t = new T();
+  const boom = new Error("boom");
+  let secondRan = false;
+  t.on("ping", () => {
+    throw boom;
+  });
+  t.on("ping", () => {
+    secondRan = true;
+  });
+  assert.throws(() => t.fire(1), boom);
+  assert.equal(secondRan, true);
+});

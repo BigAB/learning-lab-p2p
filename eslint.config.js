@@ -28,7 +28,10 @@ export default tseslint.config(
               group: ["react", "react-dom", "react/*", "react-dom/*"],
               message: "core is framework-free",
             },
-            { group: ["**/ui/*", "**/hooks/*", "**/boot/*"], message: "core must not import UI" },
+            {
+              group: ["**/ui/**", "**/hooks/**", "**/boot/**"],
+              message: "core must not import UI",
+            },
           ],
         },
       ],
