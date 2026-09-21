@@ -213,3 +213,36 @@ test("counts", async () => {
   const c = ctx.lab.counts();
   assert.deepEqual(c, { connected: 1, degraded: 0, failed: 0, never: 29 });
 });
+
+test("fingerprint continuity: same cert → unchanged, different cert → flagged", async () => {
+  const ctx = make();
+  await pair(ctx, 3);
+  const first = ctx.lab.snapshot()[2]!;
+  assert.equal(first.fingerprintChanged, false, "no previous pairing to differ from");
+  assert.match(first.fingerprint!, /^7B:8B:F0:65(:[0-9A-F]{2})+$/);
+  assert.equal(JSON.parse(ctx.kv.get(TEACHER_KEY)!).roster["3"].lastFingerprint, first.fingerprint);
+
+  await pair(ctx, 3); // same iPad, same persisted certificate
+  assert.equal(ctx.lab.snapshot()[2]?.fingerprintChanged, false);
+
+  const swapped = { ...offer(3), fp: new Uint8Array(32).fill(0xab) };
+  const p = ctx.lab.acceptOffer(swapped);
+  await flush();
+  ctx.rtc.last().completeGathering();
+  await p;
+  const tile = ctx.lab.snapshot()[2]!;
+  assert.equal(tile.fingerprintChanged, true);
+  assert.equal(tile.fingerprint, new Array(32).fill("AB").join(":"));
+});
+
+test("history survives a re-pair", async () => {
+  const ctx = make();
+  const { dc } = await pair(ctx, 6);
+  dc.close();
+  const before = ctx.lab.snapshot()[5]!.history.map((h) => h.state);
+  assert.deepEqual(before.slice(-2), ["connected", "failed"]);
+  await pair(ctx, 6);
+  const after = ctx.lab.snapshot()[5]!.history.map((h) => h.state);
+  assert.deepEqual(after.slice(0, before.length), before, "earlier states are kept");
+  assert.deepEqual(after.slice(before.length), ["gathering", "connecting", "connected"]);
+});

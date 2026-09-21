@@ -37,6 +37,10 @@ export interface RosterView {
   wakeLock?: boolean;
   remoteAppVersion?: string;
   versionMismatch: boolean;
+  /** DTLS fingerprint of the current pairing, uppercase colon-separated hex (spec §6.3). */
+  fingerprint?: string;
+  /** True when this ws paired before with a *different* certificate: not the same iPad. */
+  fingerprintChanged: boolean;
   history: { at: number; state: SessionState }[];
 }
 
@@ -46,6 +50,7 @@ interface Live {
   visibility?: Visibility;
   wakeLock?: boolean;
   remoteAppVersion?: string;
+  fingerprintChanged: boolean;
   history: { at: number; state: SessionState }[];
 }
 
@@ -58,6 +63,11 @@ export class SupersededError extends Error {
 
 const ALL_WS = Array.from({ length: WS_MAX - WS_MIN + 1 }, (_, i) => WS_MIN + i);
 const HISTORY_CAP = 50;
+
+/** Raw sha-256 fingerprint bytes → the `AA:BB:…` form the browser and the drawer both show. */
+function hexFingerprint(fp: Uint8Array): string {
+  return Array.from(fp, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join(":");
+}
 
 /** Teacher side: up to 30 PeerSessions, persisted roster metadata, repair queue. */
 export class LabController extends Emitter<LabEvents> {
@@ -121,8 +131,19 @@ export class LabController extends Emitter<LabEvents> {
       ...(this.env.certificates ? { certificates: this.env.certificates } : {}),
     });
     this.sessions.set(ws, s);
-    this.live.set(ws, { history: [] });
+    // The student's DTLS certificate is persisted per device (spec §6.3), so a fingerprint that
+    // matches the previous pairing means the same iPad came back; a different one means the
+    // station was swapped (or the iPad was wiped) and the teacher should be told.
+    const e = this.entry(ws);
+    const fp = hexFingerprint(offer.fp);
+    const fingerprintChanged = e.lastFingerprint !== undefined && e.lastFingerprint !== fp;
+    e.lastFingerprint = fp;
+    // History is the station's story across the lab day, not this session's: a re-pair continues
+    // it rather than wiping the evidence of why the last one died.
+    const previous = this.live.get(ws);
+    this.live.set(ws, { history: previous?.history ?? [], fingerprintChanged });
     this.wire(s);
+    this.persist();
 
     const answer = new Promise<SdpPayload>((resolve, reject) => {
       const offLocal = s.on("localPayload", (p) => {
@@ -173,8 +194,10 @@ export class LabController extends Emitter<LabEvents> {
         state: s?.state ?? "never",
         versionMismatch:
           l?.remoteAppVersion !== undefined && l.remoteAppVersion !== this.env.appVersion,
+        fingerprintChanged: l?.fingerprintChanged ?? false,
         history: l ? [...l.history] : [],
       };
+      if (e?.lastFingerprint !== undefined) view.fingerprint = e.lastFingerprint;
       if (s?.lastRtt !== undefined) view.rtt = s.lastRtt;
       if (e?.label !== undefined) view.label = e.label;
       if (e?.lastConnectedAt !== undefined) view.lastConnectedAt = e.lastConnectedAt;
