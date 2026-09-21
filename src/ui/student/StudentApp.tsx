@@ -33,8 +33,8 @@ function StudentView({ c }: { c: StudentController }) {
   const [scanning, setScanning] = useState(false);
   const [toast, setToast] = useState<string | undefined>();
   const [showId, setShowId] = useState(false);
-  // Bumped whenever a scanned code is rejected, so <Scanner> forgets it and the same QR held up
-  // again is decoded a second time instead of being swallowed as a duplicate.
+  // Bumped whenever a scanned code is rejected, which schedules <Scanner> to offer the same QR
+  // once more after its retry delay instead of swallowing it forever as a duplicate.
   const [scanResetKey, setScanResetKey] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -48,8 +48,13 @@ function StudentView({ c }: { c: StudentController }) {
 
   useEffect(() => {
     if (view.state === "connected") setScanning(false);
-    if (view.state === "failed") showToast("Connection lost — showing a new code", 4000);
-  }, [view.state, showToast]);
+    if (view.state !== "failed") return;
+    // A start() that never got off the ground reports itself through `error` (rendered under the
+    // status bar) and closes its session in the same tick. "Connection lost" would be a lie —
+    // nothing was ever connected — so let the real message stand.
+    if (lastError && Date.now() - lastError.at < 500) return;
+    showToast("Connection lost — showing a new code", 4000);
+  }, [view.state, lastError, showToast]);
 
   useEffect(() => {
     if (lastCmd?.cmd === "show-id") {
@@ -84,6 +89,13 @@ function StudentView({ c }: { c: StudentController }) {
         {view.rtt !== undefined && <span className="meta">{view.rtt} ms</span>}
         <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{APP_VERSION}</span>
       </header>
+      {/* Outside the state switch: a dead spawn leaves the session `failed` with no branch of
+          its own, and the message has to survive the respawn's `session` event. */}
+      {lastError && (
+        <p className="meta" data-student-error>
+          Could not start: {lastError.message} — retrying…
+        </p>
+      )}
       <main className="center">
         {view.state === "awaiting-remote" && view.localWire && !scanning && (
           <>
@@ -106,14 +118,7 @@ function StudentView({ c }: { c: StudentController }) {
           <h2 style={{ color: "var(--muted)" }}>Ready</h2>
         )}
         {(view.state === "gathering" || view.state === "idle" || view.state === "none") && (
-          <>
-            <h2>Starting…</h2>
-            {lastError && (
-              <p className="meta" data-student-error>
-                {lastError.message}
-              </p>
-            )}
-          </>
+          <h2>Starting…</h2>
         )}
       </main>
       {showId && <div className="overlay-id">{c.ws}</div>}

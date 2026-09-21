@@ -1,6 +1,13 @@
 import { useEffect, useRef } from "react";
 import jsQR from "jsqr";
 
+/**
+ * How long a rejected code stays suppressed before it is offered again. The frame loop runs at
+ * ~60 fps and a courier holds the phone still, so clearing the de-dupe outright would re-decode
+ * the same bad QR every frame and fire a toast per frame.
+ */
+const RETRY_AFTER_MS = 2000;
+
 export function Scanner({
   onWire,
   deviceId,
@@ -10,15 +17,16 @@ export function Scanner({
   onWire: (wire: string) => void;
   deviceId?: string;
   onError?: (e: Error) => void;
-  /** Change this to forget the last decoded value, so the same QR can be scanned again. */
+  /** Change this to re-offer the last decoded value, so the same QR can be scanned again. */
   resetKey?: string | number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  // Kept in a ref (not the effect closure) so a resetKey change clears it without restarting the
-  // camera, which would flash the preview and re-prompt on some browsers.
+  // Kept in refs (not the effect closure) so a resetKey change schedules a retry without
+  // restarting the camera, which would flash the preview and re-prompt on some browsers.
   const lastRef = useRef("");
+  const retryAtRef = useRef<number | undefined>(undefined);
   useEffect(() => {
-    lastRef.current = "";
+    retryAtRef.current = Date.now() + RETRY_AFTER_MS;
   }, [resetKey]);
   useEffect(() => {
     const video = videoRef.current;
@@ -51,6 +59,10 @@ export function Scanner({
         if (stop) return;
         if (text && text !== lastRef.current) {
           lastRef.current = text;
+          retryAtRef.current = undefined; // a pending retry was for the previous code
+          onWire(text);
+        } else if (text && retryAtRef.current !== undefined && Date.now() >= retryAtRef.current) {
+          retryAtRef.current = undefined; // one retry per resetKey bump
           onWire(text);
         }
       }
