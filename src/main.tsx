@@ -2,6 +2,7 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bootStudent, resolveWs } from "./boot/bootStudent";
 import { bootTeacher } from "./boot/bootTeacher";
+import * as codec from "./core/sdpCodec";
 import type { StudentController } from "./core/studentController";
 import { CourierApp } from "./ui/courier/CourierApp";
 import { HomePage } from "./ui/HomePage";
@@ -56,5 +57,12 @@ function route() {
       return <HomePage />;
   }
 }
+
+declare global {
+  interface Window {
+    __labCodec?: typeof codec;
+  }
+}
+if (import.meta.env.DEV) window.__labCodec = codec;
 
 createRoot(document.getElementById("root")!).render(<StrictMode>{route()}</StrictMode>);
