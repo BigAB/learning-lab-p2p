@@ -4,3 +4,8 @@ playwright-report
 test-results
 .DS_Store
 playwright/.cache
+
+# Design docs are part of this repo. A developer's global excludes may hide docs/superpowers/**
+# (the superpowers plugin's default output path); this negation wins over core.excludesFile so
+# new specs/plans are not silently left out of commits. AGENTS.md links to the spec.
+!docs/superpowers/**

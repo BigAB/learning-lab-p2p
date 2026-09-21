@@ -301,3 +301,12 @@ Media streams, screen share, chat, recording, analytics, GitHub dead-drop signal
 | Lab LAN blocks peer-to-peer UDP (client isolation) | Out of our control; lab-checklist step 1 detects it on day one. |
 | iPad suspends page despite Single App Mode | Wake lock + `status.visibility` reporting exposes it on the dashboard. |
 | SDP template drifts from browser expectations | Fixture roundtrips in both engines on every CI run. |
+
+## 12. Follow-ups
+Small, agreed, not yet scheduled. Each ships with its own tests when picked up.
+
+| Item | Where | Note |
+|---|---|---|
+| Heartbeat silence is detected on the 5 s tick with a strict `>` compare, so `degraded` lands at **20 s** after the last frame, not the documented 15 s | `Heartbeat.tick()` | Change to `>=` (15 s exactly) or document 20 s; the unit test for `lastSeenAt` persistence currently encodes the 20 s behaviour. |
+| Copyable diagnostic blob (raw payload + UA + error) on codec/`setRemoteDescription` failure | §3.3 | Phase 1.5; pays off only when triaging remotely. |
+| Cross-process WebKit-offer → Chromium-answer codec handoff | §8.2 | Today each engine round-trips within itself. |
