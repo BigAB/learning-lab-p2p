@@ -15,7 +15,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "icon": "node scripts/make-icon.mjs"
   },
   "dependencies": {
     "jsqr": "^1.4.0",

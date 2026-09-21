@@ -18,6 +18,11 @@ export default tseslint.config(
     },
   },
   {
+    // One-off maintenance scripts (pnpm icon): plain ESM run by node, not part of the bundle.
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node } },
+  },
+  {
     files: ["src/core/**", "src/schemas/**"],
     rules: {
       "no-restricted-imports": [
