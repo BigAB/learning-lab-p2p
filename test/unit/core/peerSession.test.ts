@@ -1,0 +1,255 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { PeerSession, type SessionState } from "../../../src/core/peerSession";
+import { extractPayload } from "../../../src/core/sdpCodec";
+import { FakeClock } from "../helpers/fakeClock";
+import { FakeRtcFactory, CHROME_OFFER, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
+
+const TIMERS = {
+  heartbeatMs: 5000,
+  degradedMs: 15000,
+  failedMs: 60000,
+  connectMs: 20000,
+  gatherMs: 3000,
+};
+const offerPayload = extractPayload(CHROME_OFFER, "offer", 7);
+const answerPayload = extractPayload(SAFARI_ANSWER, "answer", 7);
+
+function student() {
+  const rtc = new FakeRtcFactory();
+  const clock = new FakeClock();
+  const s = new PeerSession({
+    role: "student",
+    ws: 7,
+    rtc,
+    clock,
+    timers: TIMERS,
+    appVersion: "t1",
+    ua: "test",
+  });
+  const states: SessionState[] = [];
+  s.on("state", (st) => states.push(st));
+  return { rtc, clock, s, states };
+}
+
+async function connectedStudent() {
+  const ctx = student();
+  const p = ctx.s.start();
+  await flush();
+  ctx.rtc.last().completeGathering();
+  await p;
+  await ctx.s.applyRemote(answerPayload);
+  const dc = ctx.rtc.last().channels[0]!;
+  dc.open();
+  return { ...ctx, dc };
+}
+
+test("student: start → gathering → localPayload → awaiting-remote", async () => {
+  const { rtc, s, states } = student();
+  let local: unknown;
+  s.on("localPayload", (p) => (local = p));
+  const p = s.start();
+  await flush();
+  assert.equal(s.state, "gathering");
+  rtc.last().completeGathering();
+  await p;
+  assert.deepEqual(states, ["gathering", "awaiting-remote"]);
+  assert.equal((local as { role: string }).role, "offer");
+  assert.equal(rtc.last().channels[0]?.label, "lab");
+});
+
+test("student: gathering proceeds after gatherMs even if never 'complete'", async () => {
+  const { clock, s } = student();
+  const p = s.start();
+  await flush();
+  clock.advance(3000);
+  await p;
+  assert.equal(s.state, "awaiting-remote");
+});
+
+test("student: applyRemote → connecting; dc open → connected; hello sent", async () => {
+  const { s, dc, states } = await connectedStudent();
+  assert.deepEqual(states, ["gathering", "awaiting-remote", "connecting", "connected"]);
+  const first = dc.sentJson()[0] as { t: string; role: string; ws: number };
+  assert.equal(first.t, "hello");
+  assert.equal(first.role, "student");
+  assert.equal(first.ws, 7);
+  assert.equal((s as PeerSession).state, "connected");
+});
+
+test("student: rejects applyRemote with an offer or from wrong state", async () => {
+  const { rtc, s } = student();
+  await assert.rejects(s.applyRemote(answerPayload));
+  const p = s.start();
+  await flush();
+  rtc.last().completeGathering();
+  await p;
+  await assert.rejects(s.applyRemote(offerPayload));
+});
+
+test("connect timeout → failed + needsRepair; pc closed", async () => {
+  const { rtc, clock, s } = student();
+  const p = s.start();
+  await flush();
+  rtc.last().completeGathering();
+  await p;
+  await s.applyRemote(answerPayload);
+  const reasons: string[] = [];
+  s.on("needsRepair", (r) => reasons.push(r));
+  clock.advance(20000);
+  assert.equal(s.state, "failed");
+  assert.equal(reasons.length, 1);
+  assert.equal(rtc.last().closed, true);
+});
+
+test("heartbeat: sends hb; silence → degraded; more silence → failed", async () => {
+  const { clock, dc, s, states } = await connectedStudent();
+  clock.advance(5000);
+  assert.equal((dc.sentJson()[1] as { t: string }).t, "hb");
+  clock.advance(15000);
+  assert.equal(s.state, "degraded");
+  clock.advance(60000);
+  assert.equal(s.state, "failed");
+  assert.deepEqual(states.slice(-2), ["degraded", "failed"]);
+});
+
+test("degraded recovers on inbound hb-ack and reports rtt", async () => {
+  const { clock, dc, s } = await connectedStudent();
+  const rtts: number[] = [];
+  s.on("rtt", (ms) => rtts.push(ms));
+  clock.advance(20000);
+  assert.equal(s.state, "degraded");
+  dc.receive(JSON.stringify({ t: "hb-ack", seq: 0, ts: clock.now() - 12 }));
+  assert.equal(s.state, "connected");
+  assert.deepEqual(rtts, [12]);
+  assert.equal(s.lastRtt, 12);
+  clock.advance(60000);
+  assert.notEqual(s.state, "failed", "degraded timer must be cleared on recovery");
+});
+
+test("ice disconnected → degraded; ice connected → connected; ice failed → failed", async () => {
+  const { rtc, s } = await connectedStudent();
+  rtc.last().setIce("disconnected");
+  assert.equal(s.state, "degraded");
+  rtc.last().setIce("connected");
+  assert.equal(s.state, "connected");
+  rtc.last().setIce("failed");
+  assert.equal(s.state, "failed");
+});
+
+test("inbound hb gets hb-ack; hello recorded; other messages emitted", async () => {
+  const { dc, s } = await connectedStudent();
+  const got: unknown[] = [];
+  s.on("message", (m) => got.push(m));
+  dc.receive(JSON.stringify({ t: "hb", seq: 3, ts: 99 }));
+  assert.deepEqual(dc.sentJson().at(-1), { t: "hb-ack", seq: 3, ts: 99 });
+  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: 7, appVersion: "t1", ua: "mac" }));
+  assert.equal(s.remoteHello?.role, "teacher");
+  dc.receive(JSON.stringify({ t: "cmd", cmd: "ping" }));
+  assert.deepEqual(got, [{ t: "cmd", cmd: "ping" }]);
+});
+
+test("garbage and unknown t are ignored and counted, never thrown", async () => {
+  const { dc, s } = await connectedStudent();
+  dc.receive("not json");
+  dc.receive(JSON.stringify({ t: "evil" }));
+  dc.receive(JSON.stringify({ t: "cmd", cmd: "rm-rf" }));
+  assert.equal(s.ignoredCount, 3);
+  assert.equal(s.state, "connected");
+});
+
+test("chunked inbound frames reassemble into one message", async () => {
+  const { dc, s } = await connectedStudent();
+  const got: unknown[] = [];
+  s.on("message", (m) => got.push(m));
+  const whole = JSON.stringify({ t: "cmd", cmd: "show-id" });
+  dc.receive(JSON.stringify({ t: "chunk", id: "x", i: 0, n: 2, data: whole.slice(0, 5) }));
+  dc.receive(JSON.stringify({ t: "chunk", id: "x", i: 1, n: 2, data: whole.slice(5) }));
+  assert.deepEqual(got, [{ t: "cmd", cmd: "show-id" }]);
+});
+
+test("send validates outbound and is a no-op when channel not open", async () => {
+  const { s } = student();
+  s.send({ t: "cmd", cmd: "ping" }); // idle, no channel: no throw
+  const c = await connectedStudent();
+  assert.throws(() => c.s.send({ t: "cmd", cmd: "nope" } as never));
+  c.s.send({ t: "status", visibility: "visible", wakeLock: true });
+  assert.deepEqual(c.dc.sentJson().at(-1), { t: "status", visibility: "visible", wakeLock: true });
+});
+
+test("dc close → failed", async () => {
+  const { dc, s } = await connectedStudent();
+  dc.close();
+  assert.equal(s.state, "failed");
+});
+
+test("close() tears down silently: state failed, no needsRepair", async () => {
+  const { s, rtc } = await connectedStudent();
+  let repairs = 0;
+  s.on("needsRepair", () => repairs++);
+  s.close();
+  assert.equal(s.state, "failed");
+  assert.equal(repairs, 0);
+  assert.equal(rtc.last().closed, true);
+});
+
+test("teacher: applyRemote(offer) from idle → gathering → localPayload(answer) → connecting → connected", async () => {
+  const rtc = new FakeRtcFactory();
+  const clock = new FakeClock();
+  const t = new PeerSession({
+    role: "teacher",
+    ws: 7,
+    rtc,
+    clock,
+    timers: TIMERS,
+    appVersion: "t1",
+    ua: "mac",
+  });
+  const states: SessionState[] = [];
+  t.on("state", (st) => states.push(st));
+  let local: { role: string } | undefined;
+  t.on("localPayload", (p) => (local = p));
+  const p = t.applyRemote(offerPayload);
+  await flush();
+  assert.equal(t.state, "gathering");
+  assert.ok(rtc.last().remoteDescription?.sdp?.includes("a=ice-ufrag:kJ3q"));
+  rtc.last().completeGathering();
+  await p;
+  assert.equal(local?.role, "answer");
+  assert.deepEqual(states, ["gathering", "connecting"]);
+  const dc = rtc.last().incomingChannel();
+  dc.open();
+  assert.equal(t.state, "connected");
+  assert.equal((dc.sentJson()[0] as { role: string }).role, "teacher");
+});
+
+test("teacher: start() is rejected", async () => {
+  const t = new PeerSession({
+    role: "teacher",
+    ws: 1,
+    rtc: new FakeRtcFactory(),
+    clock: new FakeClock(),
+    appVersion: "t",
+    ua: "u",
+  });
+  await assert.rejects(t.start());
+});
+
+test("passes certificates into the pc config", async () => {
+  const rtc = new FakeRtcFactory();
+  const cert = { expires: 1 } as unknown as RTCCertificate;
+  const s = new PeerSession({
+    role: "student",
+    ws: 1,
+    rtc,
+    clock: new FakeClock(),
+    certificates: [cert],
+    appVersion: "t",
+    ua: "u",
+  });
+  const p = s.start();
+  await flush();
+  assert.deepEqual(rtc.last().config.certificates, [cert]);
+  rtc.last().completeGathering();
+  await p;
+});
