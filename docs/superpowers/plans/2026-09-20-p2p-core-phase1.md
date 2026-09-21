@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Node `>=22` (needed for `CompressionStream("deflate-raw")` and `node --test` glob support). pnpm `>=9`.
-- `src/core/**` and `src/schemas/**` import nothing from `react`, `react-dom`, `src/ui`, `src/hooks`; no use of `window`, `document`, `navigator`, `localStorage`, `sessionStorage`, `indexedDB`, `location`, or the `RTCPeerConnection` global. Enforced by ESLint; CI fails otherwise.
+- `src/core/**` and `src/schemas/**` import nothing from `react`, `react-dom`, `src/ui`, `src/hooks`; no use of `window`, `document`, `navigator`, `localStorage`, `sessionStorage`, `indexedDB`, `location`. Enforced by ESLint; CI fails otherwise. Core never calls `new RTCPeerConnection` directly (type references are fine); it goes through the injected `RtcFactory`.
 - Every value entering core (DataChannel frames, QR wire strings, storage reads, URL params) is parsed with a Zod schema first. Every value leaving core (outbound DC messages, persisted blobs) is parsed before leaving. TS types are `z.infer<>` of schemas; never hand-duplicate.
 - Unknown DataChannel `t` → ignore and count; never throw on the wire.
 - Storage keys: `lab.student.v1`, `lab.teacher.v1`. Corrupt blob → log, reset to defaults, continue.
@@ -164,7 +164,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["dist", "node_modules", "playwright-report", "test-results"] },
+  { ignores: ["dist", "node_modules", "playwright-report", "test-results", ".superpowers"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -192,7 +192,7 @@ export default tseslint.config(
       "no-restricted-globals": [
         "error",
         "window", "document", "navigator", "localStorage", "sessionStorage",
-        "indexedDB", "location", "RTCPeerConnection", "requestAnimationFrame",
+        "indexedDB", "location", "requestAnimationFrame",
       ],
     },
   },
@@ -212,6 +212,7 @@ pnpm-lock.yaml
 playwright-report
 test-results
 test/fixtures
+.superpowers
 ```
 
 `.gitignore`:
@@ -3443,7 +3444,7 @@ function StudentView({ c }: { c: StudentController }) {
   }, [session]);
 
   return (
-    <div data-state={view.state}>
+    <div id="student" data-state={view.state}>
       <header className="bar">
         <span className="ws">{c.ws}</span>
         <StatusPill state={view.state} />
@@ -3902,13 +3903,13 @@ In `index.html`, change the manifest link to a relative path so the Pages base w
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { copyFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const spaFallback = (): Plugin => ({
   name: "spa-404-fallback",
   closeBundle() {
-    const dist = resolve(__dirname, "dist");
-    try { copyFileSync(resolve(dist, "index.html"), resolve(dist, "404.html")); } catch { /* dev */ }
+    const dist = fileURLToPath(new URL("./dist/", import.meta.url));
+    try { copyFileSync(`${dist}index.html`, `${dist}404.html`); } catch { /* dev server: no dist */ }
   },
 });
 
@@ -3944,7 +3945,7 @@ git commit -m "feat(courier): scan→hold→show flow; PWA manifest; 404 SPA fal
 - Modify: `src/main.tsx` (expose codec on `window.__labCodec` in dev builds), `.gitignore`
 
 **Interfaces:**
-- Consumes: `window.__lab.inject` (Task 9/10), DOM contract: student root `[data-state]`, `canvas[data-payload][data-role][data-ws]`, teacher `[data-tile][data-state]`, `[data-queue-ws]`, `[data-count]`.
+- Consumes: `window.__lab.inject` (Task 9/10), DOM contract: student root `#student[data-state]`, `canvas[data-payload][data-role][data-ws]`, teacher `[data-tile][data-state]`, `[data-queue-ws]`, `[data-count]`.
 - Produces: `window.__labCodec = { extractPayload, buildSdp, encodeWire, decodeWire }` (dev only). Test helpers `openTeacher(browser, settings?)`, `openStudent(browser, ws)`, `pair(teacherPage, studentPage, ws)`.
 
 - [ ] **Step 1: Expose codec for the template test (dev only)**
@@ -4042,12 +4043,12 @@ export async function expectState(page: Page, selector: string, state: string, t
 `test/e2e/pairing.spec.ts`:
 ```ts
 import { expect, test } from "@playwright/test";
-import { expectState, openStudent, openTeacher, pair } from "./helpers";
+import { expectState, openStudent, openTeacher, pair, readPayload } from "./helpers";
 
 test("student shows an offer QR on load", async ({ browser }) => {
   const s = await openStudent(browser, 7);
   await expect(s.page.locator(".bar .ws")).toHaveText("7");
-  await expectState(s.page, "[data-state]", "awaiting-remote");
+  await expectState(s.page, "#student", "awaiting-remote");
   await expect(s.page.locator("canvas[data-payload][data-role='offer'][data-ws='7']")).toBeVisible();
   await s.ctx.close();
 });
@@ -4056,7 +4057,7 @@ test("full pairing: both sides connected, heartbeats produce rtt", async ({ brow
   const t = await openTeacher(browser);
   const s = await openStudent(browser, 7);
   await pair(t.page, s.page, 7);
-  await expectState(s.page, "[data-state]", "connected");
+  await expectState(s.page, "#student", "connected");
   await expectState(t.page, "[data-tile='7']", "connected");
   await expect(t.page.locator("[data-tile='7'] [data-rtt]")).toBeVisible();
   await expect(t.page.locator("[data-count='connected']")).toHaveText(/1/);
@@ -4077,7 +4078,7 @@ test("student loss → degraded → failed → repair queue → re-pair succeeds
   const s2 = await openStudent(browser, 3);
   await pair(t.page, s2.page, 3);
   await expectState(t.page, "[data-tile='3']", "connected");
-  await expectState(s2.page, "[data-state]", "connected");
+  await expectState(s2.page, "#student", "connected");
   await s2.ctx.close();
   await t.ctx.close();
 });
@@ -4085,12 +4086,12 @@ test("student loss → degraded → failed → repair queue → re-pair succeeds
 test("student survives teacher disappearance by showing a fresh offer", async ({ browser }) => {
   const t = await openTeacher(browser);
   const s = await openStudent(browser, 5);
+  const firstOffer = await readPayload(s.page, "offer", 5);
   await pair(t.page, s.page, 5);
-  await expectState(s.page, "[data-state]", "connected");
-  const firstOffer = await s.page.locator("canvas[data-payload]").first().getAttribute("data-payload").catch(() => null);
+  await expectState(s.page, "#student", "connected");
   await t.ctx.close();
   // student timers are defaults (15 s degraded, 60 s failed) — too slow for CI, so ICE 'failed'/dc close must drive it.
-  await expectState(s.page, "[data-state]", "awaiting-remote", 45_000);
+  await expectState(s.page, "#student", "awaiting-remote", 45_000);
   const secondOffer = await s.page.locator("canvas[data-payload][data-role='offer']").getAttribute("data-payload");
   expect(secondOffer).not.toBe(firstOffer);
   await s.ctx.close();
@@ -4110,9 +4111,9 @@ test("two students pair independently", async ({ browser }) => {
 
 test("garbage injected into the student is rejected without breaking the session", async ({ browser }) => {
   const s = await openStudent(browser, 9);
-  await expectState(s.page, "[data-state]", "awaiting-remote");
+  await expectState(s.page, "#student", "awaiting-remote");
   await expect(s.page.evaluate(() => window.__lab!.inject("LAB1:garbage00"))).rejects.toThrow();
-  await expectState(s.page, "[data-state]", "awaiting-remote");
+  await expectState(s.page, "#student", "awaiting-remote");
   await s.ctx.close();
 });
 ```
