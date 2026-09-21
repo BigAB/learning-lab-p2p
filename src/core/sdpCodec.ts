@@ -40,7 +40,11 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
     seen.add(key);
     cands.push({ ip, port, proto: "udp" });
   }
-  return SdpPayloadSchema.parse({ v: 1, role, ws, mid, ufrag, pwd, fp, setup, cands });
+  const result = SdpPayloadSchema.safeParse({ v: 1, role, ws, mid, ufrag, pwd, fp, setup, cands });
+  if (!result.success) {
+    throw new CodecError(`sdp: ${result.error.issues[0]?.message ?? "invalid"}`);
+  }
+  return result.data;
 }
 
 export function buildSdp(p: SdpPayload): string {
@@ -134,5 +138,9 @@ export async function decodeWire(wire: string): Promise<SdpPayload> {
   const compact = CompactPayloadSchema.safeParse(parsed);
   if (!compact.success)
     throw new CodecError(`schema: ${compact.error.issues[0]?.message ?? "invalid"}`);
-  return fromCompact(compact.data);
+  try {
+    return fromCompact(compact.data);
+  } catch (e) {
+    throw new CodecError(`payload: ${(e as Error).message}`);
+  }
 }

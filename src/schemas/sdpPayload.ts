@@ -33,7 +33,7 @@ export const CompactPayloadSchema = z.object({
   m: z.string().min(1).max(16),
   u: z.string().min(4).max(256),
   p: z.string().min(22).max(256),
-  f: z.string().length(43),
+  f: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "base64url fingerprint"),
   s: SetupSchema,
   c: z
     .array(z.tuple([z.string().min(2), z.number().int().min(1).max(65535)]))

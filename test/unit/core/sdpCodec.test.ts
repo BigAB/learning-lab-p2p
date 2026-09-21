@@ -9,6 +9,7 @@ import {
   CodecError,
   WIRE_PREFIX,
 } from "../../../src/core/sdpCodec";
+import { deflateRaw, toBase64Url, crc8 } from "../../../src/core/bytes";
 
 const chromeOffer = readFileSync(
   new URL("../../fixtures/sdp/chrome-offer.sdp", import.meta.url),
@@ -83,4 +84,40 @@ test("extractPayload throws on missing attributes", () => {
   assert.throws(() =>
     extractPayload("v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n", "offer", 1),
   );
+});
+
+test("extractPayload throws CodecError when only candidate is link-local", () => {
+  const sdp = [
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=-",
+    "t=0 0",
+    "a=group:BUNDLE 0",
+    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+    "c=IN IP4 0.0.0.0",
+    "a=candidate:1 1 udp 2122260223 169.254.10.5 54321 typ host",
+    "a=ice-ufrag:kJ3q",
+    "a=ice-pwd:Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
+    "a=fingerprint:sha-256 7B:8B:F0:65:5F:78:E2:51:3B:AC:6F:F3:3F:46:1B:35:DC:B8:5F:64:1A:24:C2:43:F0:A1:58:D0:A1:2C:19:08",
+    "a=setup:actpass",
+    "a=mid:0",
+  ].join("\r\n");
+  assert.throws(() => extractPayload(sdp, "offer", 7), CodecError);
+});
+
+test("decodeWire rejects a non-base64url compact fingerprint without leaking a raw error", async () => {
+  const compact = {
+    v: 1,
+    r: "o",
+    w: 7,
+    m: "0",
+    u: "kJ3q",
+    p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
+    f: "!".repeat(43),
+    s: "actpass",
+    c: [["192.168.1.42", 54321]],
+  };
+  const packed = await deflateRaw(new TextEncoder().encode(JSON.stringify(compact)));
+  const wire = `${WIRE_PREFIX}${toBase64Url(packed)}${crc8(packed).toString(16).padStart(2, "0")}`;
+  await assert.rejects(decodeWire(wire), CodecError);
 });

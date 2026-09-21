@@ -37,4 +37,5 @@ test("compact form requires 43-char base64url fingerprint", () => {
   };
   assert.equal(CompactPayloadSchema.safeParse(c).success, true);
   assert.equal(CompactPayloadSchema.safeParse({ ...c, f: "A".repeat(42) }).success, false);
+  assert.equal(CompactPayloadSchema.safeParse({ ...c, f: "!".repeat(43) }).success, false);
 });
