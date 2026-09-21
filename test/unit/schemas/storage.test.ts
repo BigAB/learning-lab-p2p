@@ -28,3 +28,10 @@ test("keys are versioned", () => {
 test("rejects ws out of range", () => {
   assert.equal(StudentStateSchema.safeParse({ ws: 0 }).success, false);
 });
+
+test("roster entry accepts lastSeenAt and leaves it undefined for old blobs", () => {
+  const t = TeacherStateSchema.parse({ roster: { "1": { pairCount: 1, lastSeenAt: 42 } } });
+  assert.equal(t.roster["1"]?.lastSeenAt, 42);
+  const old = TeacherStateSchema.parse({ roster: { "2": { pairCount: 1 } } });
+  assert.equal(old.roster["2"]?.lastSeenAt, undefined);
+});

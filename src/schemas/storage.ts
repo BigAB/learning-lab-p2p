@@ -15,6 +15,8 @@ export type StudentState = z.infer<typeof StudentStateSchema>;
 export const RosterEntrySchema = z.object({
   label: z.string().max(64).optional(),
   lastConnectedAt: z.number().optional(),
+  /** Last inbound frame from this station (heartbeat or otherwise); coarse, see LabController. */
+  lastSeenAt: z.number().optional(),
   lastRtt: z.number().optional(),
   lastSeenUa: z.string().max(512).optional(),
   lastFingerprint: z.string().max(128).optional(),

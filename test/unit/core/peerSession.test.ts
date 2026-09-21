@@ -413,3 +413,17 @@ test("teacher: a second incoming datachannel is closed and ignored", async () =>
   t.send({ t: "cmd", cmd: "ping" });
   assert.deepEqual(first.sentJson().at(-1), { t: "cmd", cmd: "ping" });
 });
+
+test("inbound fires for every valid frame from the peer, never for refused ones", async () => {
+  const { dc, s } = await connectedStudent();
+  let inbound = 0;
+  s.on("inbound", () => inbound++);
+  dc.receive(JSON.stringify({ t: "hb-ack", seq: 1, ts: 0 }));
+  dc.receive(JSON.stringify({ t: "hb", seq: 2, ts: 0 }));
+  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: 7, appVersion: "t1", ua: "mac" }));
+  dc.receive(JSON.stringify({ t: "cmd", cmd: "ping" }));
+  assert.equal(inbound, 4, "hb-ack, hb, hello and cmd are all proof of life");
+  dc.receive("not json");
+  dc.receive(JSON.stringify({ t: "evil" }));
+  assert.equal(inbound, 4, "garbage is not proof of anything");
+});

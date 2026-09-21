@@ -44,6 +44,8 @@ export type PeerSessionEvents = {
   message: [LabMessage];
   hello: [HelloMessage];
   rtt: [number];
+  /** A frame from the peer passed the schema: proof of life, whatever it said. */
+  inbound: [];
   needsRepair: [string];
   ignored: [string];
 };
@@ -226,6 +228,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
     const r = LabMessageSchema.safeParse(json);
     if (!r.success) return this.ignore("schema");
     const m = r.data;
+    this.emit("inbound");
     switch (m.t) {
       case "chunk": {
         const dropped = this.reasm.dropped;
