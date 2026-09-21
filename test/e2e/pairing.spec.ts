@@ -78,7 +78,11 @@ test("garbage injected into the student is rejected without breaking the session
 }) => {
   const s = await openStudent(browser, 9);
   await expectState(s.page, "#student", "awaiting-remote");
-  await expect(s.page.evaluate(() => window.__lab!.inject("LAB1:garbage00"))).rejects.toThrow();
+  // Playwright serializes the page-side error, so CodecError's name may not survive — match either
+  // the name or one of the codec's boundary messages, not merely "something threw".
+  await expect(s.page.evaluate(() => window.__lab!.inject("LAB1:garbage00"))).rejects.toThrow(
+    /CodecError|crc mismatch|not a LAB1|bad base64url|payload/,
+  );
   await expectState(s.page, "#student", "awaiting-remote");
   await s.ctx.close();
 });

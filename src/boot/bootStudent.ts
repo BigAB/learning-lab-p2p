@@ -23,22 +23,23 @@ export function resolveWs(): { urlWs?: number; storedWs?: number } {
   return out;
 }
 
-const TimersParamSchema = z.tuple([
-  z.coerce.number().int().min(200),
-  z.coerce.number().int().min(500),
-  z.coerce.number().int().min(1000),
-]);
-
 /**
  * Dev-only `?timers=heartbeatMs,degradedMs,failedMs`. The student's shipped defaults (15 s
  * degraded, 60 s failed) are deliberately patient, which makes "teacher vanished" untestable in
- * an e2e run; this override exists for that test and is ignored in production builds.
+ * an e2e run; this override exists for that test and is ignored in production builds. The schema
+ * is built inside the DEV guard so the whole feature — parser included — is dead code a
+ * production build drops.
  */
 function urlTimers(): Partial<SessionTimers> | undefined {
   if (!import.meta.env.DEV) return undefined;
   const raw = new URLSearchParams(location.search).get("timers");
   if (raw === null) return undefined;
-  const parsed = TimersParamSchema.safeParse(raw.split(","));
+  const schema = z.tuple([
+    z.coerce.number().int().min(200),
+    z.coerce.number().int().min(500),
+    z.coerce.number().int().min(1000),
+  ]);
+  const parsed = schema.safeParse(raw.split(","));
   if (!parsed.success) return undefined;
   const [heartbeatMs, degradedMs, failedMs] = parsed.data;
   return { heartbeatMs, degradedMs, failedMs };
