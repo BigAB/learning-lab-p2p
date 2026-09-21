@@ -1,0 +1,20 @@
+export type EventMap = Record<string, unknown[]>;
+type Listener<A extends unknown[]> = (...args: A) => void;
+
+export class Emitter<E extends EventMap> {
+  private listeners: { [K in keyof E]?: Set<Listener<E[K]>> } = {};
+
+  on<K extends keyof E>(name: K, cb: Listener<E[K]>): () => void {
+    const set = (this.listeners[name] ??= new Set());
+    set.add(cb);
+    return () => {
+      set.delete(cb);
+    };
+  }
+
+  protected emit<K extends keyof E>(name: K, ...args: E[K]): void {
+    const set = this.listeners[name];
+    if (!set) return;
+    for (const cb of [...set]) cb(...args);
+  }
+}
