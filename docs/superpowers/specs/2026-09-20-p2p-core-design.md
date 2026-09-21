@@ -140,7 +140,7 @@ idle → gathering → awaiting-remote → connecting → connected ⇄ degraded
 | `degradedMs` | 15 s | heartbeat silence → `degraded` |
 | `failedMs` | 60 s | time in `degraded` → `failed` |
 
-**`start()` rejection → the controller respawns with backoff.** If the student's `start()` rejects (no usable candidate, codec refusal), `StudentController` logs it, `close()`s the dead session, drops it, emits `error` with the message (rendered under "Starting…") and respawns after `restartDelayMs * 2^attempt`, capped at 30 s. `attempt` resets when a session reaches `connected`; `stop()` cancels a pending respawn. Without this the kiosk sits on "Starting…" forever with no session and no QR.
+**`start()` rejection → the controller respawns with backoff.** If the student's `start()` rejects (no usable candidate, codec refusal), `StudentController` logs it, `close()`s the dead session, drops it, emits `error` with the message (rendered under "Starting…") and respawns after `restartDelayMs * 2^attempt`, capped at 30 s. `attempt` resets when a session reaches `connected` and on `stop()`/`start()`, so a restarted controller backs off from `restartDelayMs` again; `stop()` also cancels a pending respawn. Without this the kiosk sits on "Starting…" forever with no session and no QR.
 
 ### 4.1 Heartbeat
 Every 5 s each side sends `hb {seq, ts}`; receiver replies `hb-ack {seq, ts}`. RTT = now − ts on ack; the **last RTT is kept per session** (`PeerSession.lastRtt`, mirrored into the roster) — the dashboard shows a current number, not a series. Miss threshold 15 s. All three timers (`heartbeatMs`, `degradedMs`, `failedMs`) come from teacher settings (§6) and are injectable for tests.

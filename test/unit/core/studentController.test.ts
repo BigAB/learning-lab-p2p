@@ -255,3 +255,18 @@ test("a session that connects resets the respawn backoff", async () => {
   await flush();
   assert.equal(ctx.rtc.pcs.length, 2, "backoff starts again at restartDelayMs after a pairing");
 });
+
+test("stop() then start() restarts the respawn backoff from restartDelayMs", async () => {
+  const ctx = make(7, LINK_LOCAL_ONLY_OFFER);
+  ctx.c.start();
+  await flush();
+  await failOneSpawn(ctx); // attempt 1: a respawn is now pending at 500 ms
+  ctx.c.stop();
+  ctx.c.start(); // a fresh start is a fresh run, not a continuation of the failed one
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 2, "start() spawns immediately");
+  await failOneSpawn(ctx);
+  ctx.clock.advance(500);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 3, "first failure after a restart waits restartDelayMs, not 2×");
+});
