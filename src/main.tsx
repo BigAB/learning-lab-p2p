@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { bootStudent, resolveWs } from "./boot/bootStudent";
 import { bootTeacher } from "./boot/bootTeacher";
 import type { StudentController } from "./core/studentController";
+import { CourierApp } from "./ui/courier/CourierApp";
 import { HomePage } from "./ui/HomePage";
 import { StudentApp } from "./ui/student/StudentApp";
 import { WsConflict } from "./ui/student/WsConflict";
@@ -49,6 +50,8 @@ function route() {
       return <StudentRoute />;
     case "/teacher":
       return <TeacherApp boot={bootTeacher()} />;
+    case "/courier":
+      return <CourierApp />;
     default:
       return <HomePage />;
   }
