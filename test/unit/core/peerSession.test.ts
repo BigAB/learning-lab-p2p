@@ -253,3 +253,98 @@ test("passes certificates into the pc config", async () => {
   rtc.last().completeGathering();
   await p;
 });
+
+test("heartbeat-caused degrade recovered by ICE re-arms the watchdog", async () => {
+  const { clock, rtc, s } = await connectedStudent();
+  clock.advance(20000);
+  assert.equal(s.state, "degraded");
+  rtc.last().setIce("connected");
+  assert.equal(s.state, "connected");
+  clock.advance(20000);
+  assert.equal(s.state, "degraded");
+});
+
+test("ICE-caused degrade is cleared by inbound heartbeat", async () => {
+  const { clock, rtc, dc, s } = await connectedStudent();
+  rtc.last().setIce("disconnected");
+  assert.equal(s.state, "degraded");
+  dc.receive(JSON.stringify({ t: "hb-ack", seq: 0, ts: clock.now() }));
+  assert.equal(s.state, "connected");
+  for (let i = 0; i < 12; i++) {
+    clock.advance(5000);
+    dc.receive(JSON.stringify({ t: "hb-ack", seq: i + 1, ts: clock.now() }));
+  }
+  assert.notEqual(s.state, "failed");
+});
+
+test("close() during gathering emits no needsRepair and ends failed", async () => {
+  const { rtc, s } = student();
+  let repairs = 0;
+  s.on("needsRepair", () => repairs++);
+  void s.start();
+  await flush();
+  assert.equal(s.state, "gathering");
+  s.close();
+  assert.equal(s.state, "failed");
+  assert.equal(repairs, 0);
+  assert.equal(rtc.last().closed, true);
+});
+
+test("close() during connecting emits no needsRepair and ends failed", async () => {
+  const { rtc, s } = student();
+  let repairs = 0;
+  s.on("needsRepair", () => repairs++);
+  const p = s.start();
+  await flush();
+  rtc.last().completeGathering();
+  await p;
+  await s.applyRemote(answerPayload);
+  assert.equal(s.state, "connecting");
+  s.close();
+  assert.equal(s.state, "failed");
+  assert.equal(repairs, 0);
+  assert.equal(rtc.last().closed, true);
+});
+
+test("stale pc/dc events after close() are inert", async () => {
+  const { rtc, dc, s } = await connectedStudent();
+  const ignoredBefore = s.ignoredCount;
+  s.close();
+  assert.equal(s.state, "failed");
+  // Only listen from here: anything the stale pc/dc fire below must produce nothing.
+  const states: SessionState[] = [];
+  s.on("state", (st) => states.push(st));
+  let repairs = 0;
+  s.on("needsRepair", () => repairs++);
+  rtc.last().setIce("failed");
+  dc.receive("not json");
+  dc.open();
+  assert.equal(s.state, "failed");
+  assert.equal(repairs, 0);
+  assert.equal(states.length, 0);
+  assert.equal(s.ignoredCount, ignoredBefore);
+});
+
+test("close() during gathering clears the gather fallback timer", async () => {
+  const { clock, s } = student();
+  const states: SessionState[] = [];
+  s.on("state", (st) => states.push(st));
+  void s.start();
+  await flush();
+  s.close();
+  const statesAfterClose = [...states];
+  clock.advance(3000);
+  assert.deepEqual(states, statesAfterClose);
+});
+
+test("a throwing state listener does not suppress side effects", async () => {
+  const { s, dc } = await connectedStudent();
+  const reasons: string[] = [];
+  s.on("needsRepair", (r) => reasons.push(r));
+  s.on("state", () => {
+    throw new Error("boom");
+  });
+  assert.throws(() => dc.close());
+  assert.equal(reasons.length, 1);
+  assert.equal(s.state, "failed");
+});

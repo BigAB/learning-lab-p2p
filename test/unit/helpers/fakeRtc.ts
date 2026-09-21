@@ -68,7 +68,11 @@ export class FakeRTCPeerConnection {
     this.remoteDescription = d;
   }
   close(): void {
+    if (this.closed) return;
     this.closed = true;
+    this.iceConnectionState = "closed";
+    this.oniceconnectionstatechange?.();
+    for (const ch of this.channels) ch.close();
   }
   completeGathering(): void {
     this.iceGatheringState = "complete";

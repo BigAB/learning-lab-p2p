@@ -67,6 +67,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   private readonly reasm = new Reassembler();
   private connectTimer: TimerHandle | undefined;
   private degradedTimer: TimerHandle | undefined;
+  private gatherTimer: TimerHandle | undefined;
   private done = false;
 
   constructor(private readonly opts: PeerSessionOpts) {
@@ -145,10 +146,18 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   private waitGathering(pc: RTCPeerConnection): Promise<void> {
     return new Promise((resolve) => {
       if (pc.iceGatheringState === "complete") return resolve();
-      const t = this.opts.clock.setTimeout(resolve, this.timers.gatherMs);
+      this.gatherTimer = this.opts.clock.setTimeout(() => {
+        this.gatherTimer = undefined;
+        pc.onicegatheringstatechange = null;
+        resolve();
+      }, this.timers.gatherMs);
       pc.onicegatheringstatechange = () => {
         if (pc.iceGatheringState === "complete") {
-          this.opts.clock.clearTimeout(t);
+          if (this.gatherTimer !== undefined) {
+            this.opts.clock.clearTimeout(this.gatherTimer);
+            this.gatherTimer = undefined;
+          }
+          pc.onicegatheringstatechange = null;
           resolve();
         }
       };
@@ -165,7 +174,6 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   private onOpen(): void {
     if (this.done) return;
     this.clearConnectTimer();
-    this.setState("connected");
     this.hb = new Heartbeat({
       clock: this.opts.clock,
       intervalMs: this.timers.heartbeatMs,
@@ -186,6 +194,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       appVersion: this.opts.appVersion,
       ua: this.opts.ua,
     });
+    this.setState("connected");
   }
 
   /** Inbound boundary: JSON → Zod → route. Never throws. */
@@ -208,6 +217,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       case "hb":
       case "hb-ack":
         this.hb?.handle(m);
+        this.recover();
         return;
       case "hello":
         this.remoteHello = m;
@@ -232,17 +242,20 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
 
   private degrade(reason: string): void {
     if (this.state !== "connected") return;
-    this.setState("degraded");
     this.degradedTimer = this.opts.clock.setTimeout(
       () => this.fail(`degraded for ${this.timers.failedMs}ms (${reason})`),
       this.timers.failedMs,
     );
+    this.setState("degraded");
   }
 
   private recover(): void {
     if (this.state !== "degraded") return;
     if (this.degradedTimer !== undefined) this.opts.clock.clearTimeout(this.degradedTimer);
     this.degradedTimer = undefined;
+    // Re-arm the heartbeat silence watchdog: whichever signal (ICE or heartbeat) caused the
+    // degrade, both must be considered cleared, or the watchdog can never fire again.
+    if (this.hb) this.hb.missed = false;
     this.setState("connected");
   }
 
@@ -262,13 +275,16 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
     if (this.done) return;
     this.done = true;
     this.teardown();
-    this.setState("failed");
     this.emit("needsRepair", reason);
+    this.setState("failed");
   }
 
   private teardown(): void {
     this.clearConnectTimer();
     if (this.degradedTimer !== undefined) this.opts.clock.clearTimeout(this.degradedTimer);
+    this.degradedTimer = undefined;
+    if (this.gatherTimer !== undefined) this.opts.clock.clearTimeout(this.gatherTimer);
+    this.gatherTimer = undefined;
     this.hb?.stop();
     this.hb = null;
     if (this.dc) {
