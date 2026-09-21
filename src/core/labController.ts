@@ -137,7 +137,6 @@ export class LabController extends Emitter<LabEvents> {
     const e = this.entry(ws);
     const fp = hexFingerprint(offer.fp);
     const fingerprintChanged = e.lastFingerprint !== undefined && e.lastFingerprint !== fp;
-    e.lastFingerprint = fp;
     // History is the station's story across the lab day, not this session's: a re-pair continues
     // it rather than wiping the evidence of why the last one died.
     const previous = this.live.get(ws);
@@ -148,6 +147,10 @@ export class LabController extends Emitter<LabEvents> {
     const answer = new Promise<SdpPayload>((resolve, reject) => {
       const offLocal = s.on("localPayload", (p) => {
         cleanup();
+        // Recorded only now: a scan that never produced an answer (superseded, PC blew up) was
+        // not a pairing, and must not become the baseline the next continuity check compares to.
+        this.entry(ws).lastFingerprint = fp;
+        this.persist();
         resolve(p);
       });
       // A same-ws re-scan can close() this session (see acceptOffer above) while we're still

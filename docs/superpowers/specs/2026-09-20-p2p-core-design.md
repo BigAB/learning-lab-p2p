@@ -203,7 +203,7 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
   settings: { heartbeatMs: 5000; degradedMs: 15000; failedMs: 60000; cameraDeviceId?: string };
 }
 ```
-Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastFingerprint` **is written** on every `acceptOffer` (uppercase colon-separated hex of the offer's sha-256 fingerprint) and compared with the stored value first: the drawer shows the first 8 bytes with "same device as last pairing" or "⚠️ different device than last pairing".
+Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastFingerprint` (uppercase colon-separated hex of the offer's sha-256 fingerprint) is compared with the stored value when `acceptOffer` is called, and **written only once that call's answer resolves**: a superseded or blown-up scan never becomes the baseline for the next continuity check. The drawer shows the first 8 bytes with "same device as last pairing" or "⚠️ different device than last pairing".
 
 ### 6.3 DTLS certificate — IndexedDB
 `RTCPeerConnection.generateCertificate({name:"ECDSA", namedCurve:"P-256"})` once per device, stored, passed as `certificates:[cert]`. Gives a stable fingerprint per device so the teacher can confirm "same iPad 7 as last week". Does **not** enable SDP reuse.
