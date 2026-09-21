@@ -28,11 +28,14 @@ export function StudentApp({ boot }: { boot: Promise<StudentController> }) {
 }
 
 function StudentView({ c }: { c: StudentController }) {
-  const { session, lastCmd } = useStudent(c);
+  const { session, lastCmd, lastError } = useStudent(c);
   const view = useSessionView(session);
   const [scanning, setScanning] = useState(false);
   const [toast, setToast] = useState<string | undefined>();
   const [showId, setShowId] = useState(false);
+  // Bumped whenever a scanned code is rejected, so <Scanner> forgets it and the same QR held up
+  // again is decoded a second time instead of being swallowed as a duplicate.
+  const [scanResetKey, setScanResetKey] = useState(0);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const showToast = useCallback((msg: string, ms: number) => {
@@ -60,7 +63,10 @@ function StudentView({ c }: { c: StudentController }) {
     (wire: string) => {
       void decodeWire(wire)
         .then((p) => session?.applyRemote(p))
-        .catch((e: unknown) => showToast(`Not a valid code: ${(e as Error).message}`, 3000));
+        .catch((e: unknown) => {
+          showToast(`Not a valid code: ${(e as Error).message}`, 3000);
+          setScanResetKey((k) => k + 1);
+        });
     },
     [session, showToast],
   );
@@ -88,7 +94,7 @@ function StudentView({ c }: { c: StudentController }) {
         )}
         {view.state === "awaiting-remote" && scanning && (
           <>
-            <Scanner onWire={onWire} onError={onScanError} />
+            <Scanner onWire={onWire} onError={onScanError} resetKey={scanResetKey} />
             <p>Hold the phone's code up to the camera</p>
             <button className="secondary" onClick={() => setScanning(false)}>
               Back to my code
@@ -100,7 +106,14 @@ function StudentView({ c }: { c: StudentController }) {
           <h2 style={{ color: "var(--muted)" }}>Ready</h2>
         )}
         {(view.state === "gathering" || view.state === "idle" || view.state === "none") && (
-          <h2>Starting…</h2>
+          <>
+            <h2>Starting…</h2>
+            {lastError && (
+              <p className="meta" data-student-error>
+                {lastError.message}
+              </p>
+            )}
+          </>
         )}
       </main>
       {showId && <div className="overlay-id">{c.ws}</div>}

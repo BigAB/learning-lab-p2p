@@ -5,19 +5,27 @@ export function Scanner({
   onWire,
   deviceId,
   onError,
+  resetKey,
 }: {
   onWire: (wire: string) => void;
   deviceId?: string;
   onError?: (e: Error) => void;
+  /** Change this to forget the last decoded value, so the same QR can be scanned again. */
+  resetKey?: string | number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Kept in a ref (not the effect closure) so a resetKey change clears it without restarting the
+  // camera, which would flash the preview and re-prompt on some browsers.
+  const lastRef = useRef("");
+  useEffect(() => {
+    lastRef.current = "";
+  }, [resetKey]);
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     let stop = false;
     let stream: MediaStream | undefined;
     let raf = 0;
-    let last = "";
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     const detector =
@@ -41,8 +49,8 @@ export function Scanner({
           /* a bad frame is not an error */
         }
         if (stop) return;
-        if (text && text !== last) {
-          last = text;
+        if (text && text !== lastRef.current) {
+          lastRef.current = text;
           onWire(text);
         }
       }

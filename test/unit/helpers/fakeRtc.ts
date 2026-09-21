@@ -10,6 +10,14 @@ export const SAFARI_ANSWER = readFileSync(
   "utf8",
 );
 
+/**
+ * A gathering result with nothing usable in it: the only host candidate is 169.254 link-local,
+ * so extractPayload() refuses it and PeerSession.start() rejects.
+ */
+export const LINK_LOCAL_ONLY_OFFER = CHROME_OFFER.split("\n")
+  .filter((l) => !l.startsWith("a=candidate:") || l.includes("169.254."))
+  .join("\n");
+
 export class FakeDataChannel {
   readyState: RTCDataChannelState = "connecting";
   sent: string[] = [];
@@ -49,14 +57,17 @@ export class FakeRTCPeerConnection {
   ondatachannel: ((ev: { channel: FakeDataChannel }) => void) | null = null;
   channels: FakeDataChannel[] = [];
   closed = false;
-  constructor(public readonly config: RTCConfiguration) {}
+  constructor(
+    public readonly config: RTCConfiguration,
+    private readonly offerSdp: string = CHROME_OFFER,
+  ) {}
   createDataChannel(label: string): FakeDataChannel {
     const dc = new FakeDataChannel(label);
     this.channels.push(dc);
     return dc;
   }
   async createOffer(): Promise<RTCSessionDescriptionInit> {
-    return { type: "offer", sdp: CHROME_OFFER };
+    return { type: "offer", sdp: this.offerSdp };
   }
   async createAnswer(): Promise<RTCSessionDescriptionInit> {
     return { type: "answer", sdp: SAFARI_ANSWER };
@@ -92,8 +103,9 @@ export class FakeRTCPeerConnection {
 
 export class FakeRtcFactory implements RtcFactory {
   pcs: FakeRTCPeerConnection[] = [];
+  constructor(private readonly offerSdp: string = CHROME_OFFER) {}
   create(config: RTCConfiguration): RTCPeerConnection {
-    const pc = new FakeRTCPeerConnection(config);
+    const pc = new FakeRTCPeerConnection(config, this.offerSdp);
     this.pcs.push(pc);
     return pc as unknown as RTCPeerConnection;
   }

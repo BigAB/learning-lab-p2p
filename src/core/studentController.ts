@@ -1,7 +1,7 @@
 import type { CmdMessage } from "../schemas/protocol";
 import type { StudentState } from "../schemas/storage";
 import { STUDENT_KEY, StudentStateSchema } from "../schemas/storage";
-import type { Clock } from "./clock";
+import type { Clock, TimerHandle } from "./clock";
 import { Emitter } from "./events";
 import { PeerSession, type SessionTimers } from "./peerSession";
 import type { DevicePort, KeyValueStore, RtcFactory, WakeLockPort } from "./ports";
@@ -26,7 +26,12 @@ export type StudentEvents = {
   session: [PeerSession];
   cmd: [CmdMessage["cmd"]];
   state: [StudentState];
+  /** A spawn attempt died before it could show a QR (message is user-facing). */
+  error: [string];
 };
+
+/** Ceiling for the exponential respawn backoff: a wedged iPad still retries every 30 s. */
+export const MAX_RESTART_DELAY_MS = 30_000;
 
 /** Owns the one student PeerSession: spawns, persists, auto-restarts on failure, reports status. */
 export class StudentController extends Emitter<StudentEvents> {
@@ -36,6 +41,9 @@ export class StudentController extends Emitter<StudentEvents> {
   wakeLockHeld = false;
   private stopped = false;
   private offVisibility: (() => void) | undefined;
+  /** Consecutive spawn attempts since the last `connected`; drives the respawn backoff. */
+  private attempt = 0;
+  private respawnTimer: TimerHandle | undefined;
 
   static persistedWs(kv: KeyValueStore): number | undefined {
     const raw = kv.get(STUDENT_KEY);
@@ -81,6 +89,7 @@ export class StudentController extends Emitter<StudentEvents> {
     this.stopped = true;
     this.offVisibility?.();
     this.offVisibility = undefined;
+    this.cancelRespawn();
     this.session?.close();
     this.session = null;
   }
@@ -111,6 +120,9 @@ export class StudentController extends Emitter<StudentEvents> {
     });
     s.on("state", (st, prev) => {
       if (st === "connected") {
+        // A session that got all the way up clears the backoff: the next failure restarts at
+        // restartDelayMs rather than inheriting the delay of a previous bad run.
+        this.attempt = 0;
         // Only a fresh handshake (connecting → connected) counts as a pairing; recovering from
         // degraded is the same pairing continuing, not a new one.
         if (prev === "connecting") {
@@ -130,13 +142,41 @@ export class StudentController extends Emitter<StudentEvents> {
     });
     s.on("needsRepair", (reason) => {
       this.env.log?.(`session failed: ${reason}`);
-      this.env.clock.setTimeout(() => {
-        if (this.session === s) this.spawn();
-      }, this.env.restartDelayMs ?? 500);
+      this.scheduleRespawn(s);
     });
     this.session = s;
     this.emit("session", s);
-    s.start().catch((e: unknown) => this.env.log?.(`start failed: ${String(e)}`));
+    // A rejected start() (no usable ICE candidate, codec refusal, PC blew up) leaves the kiosk on
+    // "Starting…" forever unless we tear the dead session down and try again — with a backoff, so
+    // a permanently broken device does not spin.
+    s.start().catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      this.env.log?.(`start failed: ${msg}`);
+      s.close();
+      if (this.session === s) {
+        this.session = null;
+        this.scheduleRespawn(null);
+      }
+      this.emit("error", msg);
+    });
+  }
+
+  /** Respawn after `restartDelayMs * 2^attempt` (capped), but only if `expect` is still current. */
+  private scheduleRespawn(expect: PeerSession | null): void {
+    if (this.stopped) return;
+    const base = this.env.restartDelayMs ?? 500;
+    const delay = Math.min(base * 2 ** this.attempt, MAX_RESTART_DELAY_MS);
+    this.attempt += 1;
+    this.cancelRespawn();
+    this.respawnTimer = this.env.clock.setTimeout(() => {
+      this.respawnTimer = undefined;
+      if (this.session === expect) this.spawn();
+    }, delay);
+  }
+
+  private cancelRespawn(): void {
+    if (this.respawnTimer !== undefined) this.env.clock.clearTimeout(this.respawnTimer);
+    this.respawnTimer = undefined;
   }
 
   private onCmd(cmd: CmdMessage["cmd"]): void {

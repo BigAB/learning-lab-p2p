@@ -6,12 +6,12 @@ import { STUDENT_KEY } from "../../../src/schemas/storage";
 import { FakeClock } from "../helpers/fakeClock";
 import { FakeDevice, FakeWakeLock } from "../helpers/fakeDevice";
 import { MemoryKv } from "../helpers/memoryKv";
-import { FakeRtcFactory, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
+import { FakeRtcFactory, LINK_LOCAL_ONLY_OFFER, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
 
 const answer = extractPayload(SAFARI_ANSWER, "answer", 7);
 
-function make(ws = 7) {
-  const rtc = new FakeRtcFactory();
+function make(ws = 7, offerSdp?: string) {
+  const rtc = new FakeRtcFactory(offerSdp);
   const clock = new FakeClock();
   const kv = new MemoryKv();
   const device = new FakeDevice();
@@ -197,4 +197,61 @@ test("persist never throws even if the KeyValueStore.set throws", async () => {
   });
   await flush();
   assert.equal(c.session?.state, "gathering");
+});
+
+/** Drive one spawn attempt whose offer has no usable candidate, to its rejection. */
+async function failOneSpawn(ctx: ReturnType<typeof make>) {
+  ctx.rtc.last().completeGathering();
+  await flush();
+}
+
+test("start() rejection: session dropped, error emitted, respawn backs off exponentially", async () => {
+  const ctx = make(7, LINK_LOCAL_ONLY_OFFER);
+  const errors: string[] = [];
+  ctx.c.on("error", (m) => errors.push(m));
+  ctx.c.start();
+  await flush();
+  await failOneSpawn(ctx);
+
+  assert.equal(ctx.c.session, null, "the dead session must not stay current");
+  assert.equal(ctx.rtc.pcs.length, 1);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!, /sdp/i);
+
+  ctx.clock.advance(499);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 1, "no respawn before restartDelayMs");
+  ctx.clock.advance(1);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 2, "respawned after restartDelayMs");
+
+  await failOneSpawn(ctx);
+  assert.equal(errors.length, 2);
+  ctx.clock.advance(999);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 2, "second failure waits twice as long");
+  ctx.clock.advance(1);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 3);
+});
+
+test("stop() cancels a respawn pending after a failed start()", async () => {
+  const ctx = make(7, LINK_LOCAL_ONLY_OFFER);
+  ctx.c.start();
+  await flush();
+  await failOneSpawn(ctx);
+  assert.equal(ctx.rtc.pcs.length, 1);
+  ctx.c.stop();
+  ctx.clock.advance(60_000);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 1);
+});
+
+test("a session that connects resets the respawn backoff", async () => {
+  const ctx = make();
+  const dc = await bringUp(ctx);
+  dc.close();
+  ctx.clock.advance(500);
+  await flush();
+  assert.equal(ctx.rtc.pcs.length, 2, "backoff starts again at restartDelayMs after a pairing");
 });
