@@ -10,14 +10,33 @@ function randomId(): string {
 export function chunkMessage(json: string, maxBytes: number): string[] {
   if (enc.encode(json).length <= maxBytes) return [json];
   const id = randomId();
-  // Overhead of the frame envelope (~80 bytes) plus UTF-8 expansion (≤3 bytes/char) leaves
-  // maxBytes/4 chars per chunk comfortably under the limit.
-  const size = Math.max(1, Math.floor(maxBytes / 4));
-  const parts: string[] = [];
-  for (let i = 0; i < json.length; i += size) parts.push(json.slice(i, i + size));
-  return parts.map((data, i) =>
-    JSON.stringify({ t: "chunk", id, i, n: parts.length, data } satisfies ChunkMessage),
-  );
+  // Build frames by measuring actual UTF-8 byte length of each frame.
+  // Start with initial size estimate and halve until all frames fit within maxBytes.
+  let size = Math.max(1, Math.floor(maxBytes / 4));
+  let frames: string[] = [];
+  let allFit = false;
+  while (!allFit) {
+    frames = [];
+    for (let i = 0; i < json.length; i += size) {
+      const data = json.slice(i, i + size);
+      const frame = JSON.stringify({
+        t: "chunk",
+        id,
+        i: frames.length,
+        n: 0,
+        data,
+      } satisfies ChunkMessage);
+      frames.push(frame);
+    }
+    allFit = frames.every((f) => enc.encode(f).length <= maxBytes);
+    if (!allFit) size = Math.max(1, Math.floor(size / 2));
+  }
+  // Rebuild with correct n values
+  const n = frames.length;
+  return Array.from({ length: n }, (_, idx) => {
+    const data = json.slice(idx * size, (idx + 1) * size);
+    return JSON.stringify({ t: "chunk", id, i: idx, n, data } satisfies ChunkMessage);
+  });
 }
 
 interface Pending {
@@ -29,10 +48,17 @@ interface Pending {
 export class Reassembler {
   private pending = new Map<string, Pending>();
 
+  constructor(private readonly maxPending = 8) {}
+
   /** Returns the whole message once the last chunk of an id arrives. */
   push(c: ChunkMessage): string | undefined {
     let p = this.pending.get(c.id);
     if (!p) {
+      // Evict oldest entry if at capacity
+      if (this.pending.size >= this.maxPending) {
+        const oldest = this.pending.keys().next().value as string;
+        this.pending.delete(oldest);
+      }
       p = { n: c.n, parts: new Array<string | undefined>(c.n), got: 0 };
       this.pending.set(c.id, p);
     }
