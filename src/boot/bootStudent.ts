@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { realClock } from "../core/clock";
 import type { SessionTimers } from "../core/peerSession";
-import { decodeWire } from "../core/sdpCodec";
+import { decodeWire, encodeWire } from "../core/sdpCodec";
 import { StudentController } from "../core/studentController";
 import { WsParamSchema } from "../schemas/ws";
 import { APP_VERSION } from "../ui/platform/appVersion";
@@ -12,6 +12,11 @@ import { browserWakeLock } from "../ui/platform/browserWakeLock";
 import { primeCameraPermission } from "../ui/platform/camera";
 import { loadCertificate } from "../ui/platform/cert";
 import { registerTestHook } from "./testHook";
+
+const AnswerMsg = z.object({
+  type: z.literal("lab-answer"),
+  wire: z.string().startsWith("LAB1:"),
+});
 
 export function resolveWs(): { urlWs?: number; storedWs?: number } {
   const out: { urlWs?: number; storedWs?: number } = {};
@@ -82,6 +87,22 @@ async function bootStudentUncached(ws: number): Promise<StudentController> {
     const p = await decodeWire(wire);
     await c.session?.applyRemote(p);
   });
+  if (window.parent !== window && new URLSearchParams(location.search).get("autopair") === "1") {
+    c.on("session", (s) => {
+      s.on("localPayload", (p) => {
+        void encodeWire(p).then((wire) =>
+          window.parent.postMessage({ type: "lab-offer", ws, wire }, "*"),
+        );
+      });
+    });
+    window.addEventListener("message", (ev) => {
+      const m = AnswerMsg.safeParse(ev.data);
+      if (!m.success) return;
+      void decodeWire(m.data.wire)
+        .then((p) => c.session?.applyRemote(p))
+        .catch((e: unknown) => console.warn("[autopair]", e));
+    });
+  }
   c.start();
   return c;
 }

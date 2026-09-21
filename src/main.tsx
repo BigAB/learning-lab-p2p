@@ -5,6 +5,7 @@ import { bootTeacher } from "./boot/bootTeacher";
 import * as codec from "./core/sdpCodec";
 import type { StudentController } from "./core/studentController";
 import { CourierApp } from "./ui/courier/CourierApp";
+import { LoadPage } from "./ui/dev/LoadPage";
 import { HomePage } from "./ui/HomePage";
 import { StudentApp } from "./ui/student/StudentApp";
 import { WsConflict } from "./ui/student/WsConflict";
@@ -53,6 +54,8 @@ function route() {
       return <TeacherApp boot={bootTeacher()} />;
     case "/courier":
       return <CourierApp />;
+    case "/dev/load":
+      return <LoadPage boot={bootTeacher()} />;
     default:
       return <HomePage />;
   }
