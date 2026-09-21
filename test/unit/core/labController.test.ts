@@ -246,3 +246,48 @@ test("history survives a re-pair", async () => {
   assert.deepEqual(after.slice(0, before.length), before, "earlier states are kept");
   assert.deepEqual(after.slice(before.length), ["gathering", "connecting", "connected"]);
 });
+
+test("lastFingerprint is persisted only once acceptOffer's answer resolves", async () => {
+  const ctx = make();
+  await pair(ctx, 3);
+  const saved = () =>
+    (
+      JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
+        roster: Record<string, { lastFingerprint?: string }>;
+      }
+    ).roster["3"]?.lastFingerprint;
+  const first = saved();
+  assert.match(first!, /^7B:8B:F0:65/);
+
+  const swapped = { ...offer(3), fp: new Uint8Array(32).fill(0xab) };
+  const p = ctx.lab.acceptOffer(swapped);
+  await flush();
+  assert.equal(saved(), first, "still the previous pairing while gathering");
+  ctx.rtc.last().completeGathering();
+  await p;
+  assert.equal(saved(), new Array(32).fill("AB").join(":"));
+});
+
+test("a superseded acceptOffer never writes its fingerprint", async () => {
+  const ctx = make();
+  await pair(ctx, 2);
+  const stored = () =>
+    (
+      JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
+        roster: Record<string, { lastFingerprint?: string }>;
+      }
+    ).roster["2"]?.lastFingerprint;
+  const original = stored();
+  const p1 = ctx.lab.acceptOffer({ ...offer(2), fp: new Uint8Array(32).fill(0xab) });
+  const p2 = ctx.lab.acceptOffer(offer(2)); // the real iPad again; supersedes the 0xAB scan
+  await assert.rejects(p1, SupersededError);
+  await flush();
+  ctx.rtc.last().completeGathering();
+  await p2;
+  assert.equal(stored(), original);
+  assert.equal(
+    ctx.lab.snapshot()[1]?.fingerprintChanged,
+    false,
+    "compared against the last pairing that actually answered, not the abandoned scan",
+  );
+});

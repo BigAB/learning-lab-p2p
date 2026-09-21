@@ -96,7 +96,7 @@ Reconstruct a full SDP from a fixed template: one `m=application 9 UDP/DTLS/SCTP
 
 The template is validated by Playwright roundtrips WebKit↔Chromium against captured fixtures (§8). Any change to the template requires those tests to pass in both directions.
 
-**mDNS candidates are refused at extraction.** A `<uuid>.local` host candidate means the origin never got the camera grant (§1.1.4) and the peer would have to resolve it over multicast DNS the lab LAN may not carry. Such candidates are skipped; if nothing with a literal IP remains, extraction throws `CodecError("only mDNS candidates found — camera permission missing, cannot pair")` rather than producing a payload that can never connect.
+**mDNS candidates are refused at extraction.** A `<uuid>.local` host candidate means the origin never got the camera grant (§1.1.4) and the peer would have to resolve it over multicast DNS the lab LAN may not carry. Such candidates are skipped, as are link-local ones (`169.254.*`, `fe80::*`). If nothing usable remains, extraction throws a `CodecError` whose message names the actual cause rather than producing a payload that can never connect: `only mDNS candidates found — camera permission missing, cannot pair` **only when a `.local` candidate was present**; `no usable host candidate — only link-local addresses were gathered; check the LAN connection` when the gather was link-local only; `no host candidates in sdp` when there were none at all.
 
 ### 3.3 Failure mode
 CRC mismatch or Zod failure → payload rejected at the boundary; courier flashes red and stays scanning. `setRemoteDescription` rejection → UI shows the error message (student: a toast; teacher: inline in the scan modal).
@@ -140,7 +140,7 @@ idle → gathering → awaiting-remote → connecting → connected ⇄ degraded
 | `degradedMs` | 15 s | heartbeat silence → `degraded` |
 | `failedMs` | 60 s | time in `degraded` → `failed` |
 
-**`start()` rejection → the controller respawns with backoff.** If the student's `start()` rejects (no usable candidate, codec refusal), `StudentController` logs it, `close()`s the dead session, drops it, emits `error` with the message (rendered under "Starting…") and respawns after `restartDelayMs * 2^attempt`, capped at 30 s. `attempt` resets when a session reaches `connected`; `stop()` cancels a pending respawn. Without this the kiosk sits on "Starting…" forever with no session and no QR.
+**`start()` rejection → the controller respawns with backoff.** If the student's `start()` rejects (no usable candidate, codec refusal), `StudentController` logs it, `close()`s the dead session, drops it, emits `error` with the message (rendered under "Starting…") and respawns after `restartDelayMs * 2^attempt`, capped at 30 s. `attempt` resets when a session reaches `connected` and on `stop()`/`start()`, so a restarted controller backs off from `restartDelayMs` again; `stop()` also cancels a pending respawn. Without this the kiosk sits on "Starting…" forever with no session and no QR.
 
 ### 4.1 Heartbeat
 Every 5 s each side sends `hb {seq, ts}`; receiver replies `hb-ack {seq, ts}`. RTT = now − ts on ack; the **last RTT is kept per session** (`PeerSession.lastRtt`, mirrored into the roster) — the dashboard shows a current number, not a series. Miss threshold 15 s. All three timers (`heartbeatMs`, `degradedMs`, `failedMs`) come from teacher settings (§6) and are injectable for tests.
@@ -170,7 +170,7 @@ Single channel `"lab"`, ordered, reliable, JSON, discriminated on `t`. Envelope 
 | `hb` / `hb-ack` | both | `{ seq, ts }` | Heartbeat / RTT |
 | `status` | student → teacher, on change | `{ battery?, charging?, visibility, wakeLock }` | Dashboard hints ("unplugged", "screen hidden") |
 | `cmd` | teacher → student | `{ cmd: "reload" \| "show-id" \| "ping" }` | Remote actions; `reload` = deliberate re-pair from the desk |
-| `chunk` | both | `{ id, i, n, data }` | Reassembly frame for messages > 16 KB (Safari DC limit); built now, used by Phase 2 SDP |
+| `chunk` | both | `{ id, i, n, data }` | Reassembly frame for messages > 16 KB (Safari DC limit); built now, used by Phase 2 SDP. The reassembler buffers ≤ 8 in-flight ids; duplicates, out-of-range indices and the buffered chunks of an evicted id all count as dropped |
 
 ### 5.2 Reserved namespaces (typed as empty unions now)
 - `media.*` — Phase 2: `media.offer` / `media.answer` (full SDP), `media.request {kind, res}` for per-peer quality bumps.
@@ -203,7 +203,7 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
   settings: { heartbeatMs: 5000; degradedMs: 15000; failedMs: 60000; cameraDeviceId?: string };
 }
 ```
-Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastFingerprint` **is written** on every `acceptOffer` (uppercase colon-separated hex of the offer's sha-256 fingerprint) and compared with the stored value first: the drawer shows the first 8 bytes with "same device as last pairing" or "⚠️ different device than last pairing".
+Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastFingerprint` (uppercase colon-separated hex of the offer's sha-256 fingerprint) is compared with the stored value when `acceptOffer` is called, and **written only once that call's answer resolves**: a superseded or blown-up scan never becomes the baseline for the next continuity check. The drawer shows the first 8 bytes of the stored fingerprint whenever one exists, and adds the verdict — "same device as last pairing" or "⚠️ different device than last pairing" — only while the tile has a session this run (state ≠ `never`), because the verdict is a claim about the current pairing.
 
 ### 6.3 DTLS certificate — IndexedDB
 `RTCPeerConnection.generateCertificate({name:"ECDSA", namedCurve:"P-256"})` once per device, stored, passed as `certificates:[cert]`. Gives a stable fingerprint per device so the teacher can confirm "same iPad 7 as last week". Does **not** enable SDP reuse.
@@ -251,7 +251,7 @@ Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge Q
 - Two contexts on one machine (student + teacher) P2P over loopback. Camera bypass: test reads `data-payload` attribute from the QR element and injects it into the other context via `page.evaluate` (simulated courier). Assert `connected` + heartbeats.
 - Failure path: close student context → teacher tile degraded → failed within shortened timers; new context re-pairs.
 - Codec through real browsers: the roundtrip spec (`codec.spec.ts`) runs **per engine** — Chromium and WebKit each extract → encode → decode → rebuild → `setRemoteDescription` in both directions within their own engine. A single cross-process WebKit-offer → Chromium-answer handoff is a follow-up.
-- One real-scanner test (`--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`) is a **follow-up**, not Phase 1: the suite bypasses the camera through the `data-payload` attribute instead.
+- One real-scanner test (`scanner.spec.ts`, Chromium only): the student's offer wire is rendered into a Y4M clip (`test/e2e/qrVideo.ts`) that a second browser plays as the teacher's camera via `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`. The teacher's answer QR appears only if `<Scanner>` decoded the frames, so the camera → decode → `acceptOffer` path is covered end to end; the rest of the suite still bypasses the camera through `data-payload`.
 
 ### 8.3 Manual — `docs/lab-checklist.md`
 30-iPad smoke; 10 s WiFi pull → amber → green; 90 s → red → re-pair; teacher tab reload → re-pair all; overnight soak.

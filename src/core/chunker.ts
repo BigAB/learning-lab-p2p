@@ -47,7 +47,7 @@ interface Pending {
 
 export class Reassembler {
   private pending = new Map<string, Pending>();
-  /** Chunks thrown away as duplicates or out-of-range; PeerSession counts them as ignored. */
+  /** Chunks thrown away: duplicates, out-of-range, or buffered under an id that was evicted. */
   dropped = 0;
 
   constructor(private readonly maxPending = 8) {}
@@ -56,10 +56,11 @@ export class Reassembler {
   push(c: ChunkMessage): string | undefined {
     let p = this.pending.get(c.id);
     if (!p) {
-      // Evict oldest entry if at capacity
+      // Evict the oldest id at capacity; every chunk it had buffered is lost, so count them.
       if (this.pending.size >= this.maxPending) {
-        const oldest = this.pending.keys().next().value as string;
-        this.pending.delete(oldest);
+        const [oldestId, oldest] = this.pending.entries().next().value as [string, Pending];
+        this.dropped += oldest.got;
+        this.pending.delete(oldestId);
       }
       p = { n: c.n, parts: new Array<string | undefined>(c.n), got: 0 };
       this.pending.set(c.id, p);

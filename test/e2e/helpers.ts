@@ -2,14 +2,19 @@ import { expect, type Browser, type BrowserContext, type Page } from "@playwrigh
 
 export const SHORT_TIMERS = { heartbeatMs: 300, degradedMs: 1200, failedMs: 2500 };
 
+/** `roster` seeds persisted per-ws metadata (labels, lastFingerprint…) as if from an earlier lab day. */
 export async function openTeacher(
   browser: Browser,
   settings = SHORT_TIMERS,
+  roster: Record<string, unknown> = {},
 ): Promise<{ ctx: BrowserContext; page: Page }> {
   const ctx = await browser.newContext({ permissions: ["camera"] });
-  await ctx.addInitScript((s) => {
-    localStorage.setItem("lab.teacher.v1", JSON.stringify({ roster: {}, settings: s }));
-  }, settings);
+  await ctx.addInitScript(
+    ({ settings, roster }) => {
+      localStorage.setItem("lab.teacher.v1", JSON.stringify({ roster, settings }));
+    },
+    { settings, roster },
+  );
   const page = await ctx.newPage();
   await page.goto("/teacher");
   await expect(page.locator("[data-tile='1']")).toBeVisible();

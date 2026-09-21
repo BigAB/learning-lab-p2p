@@ -77,6 +77,8 @@ export class StudentController extends Emitter<StudentEvents> {
   start(): void {
     if (this.session) return;
     this.stopped = false;
+    // A fresh start is a fresh run: the backoff belongs to the run that failed, not to the class.
+    this.attempt = 0;
     this.offVisibility = this.env.device.onVisibility((v) => {
       if (v === "visible") void this.acquireWakeLock();
       void this.pushStatus();
@@ -90,6 +92,7 @@ export class StudentController extends Emitter<StudentEvents> {
     this.offVisibility?.();
     this.offVisibility = undefined;
     this.cancelRespawn();
+    this.attempt = 0;
     this.session?.close();
     this.session = null;
   }

@@ -31,7 +31,8 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
 
   const cands: Candidate[] = [];
   const seen = new Set<string>();
-  let mdnsOnly = false;
+  let sawMdns = false;
+  let sawLinkLocal = false;
   for (const l of lines) {
     const m = CANDIDATE.exec(l);
     if (!m) continue;
@@ -42,15 +43,29 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
     // multicast DNS, which the lab LAN may not carry. It means the origin never got the camera
     // grant that makes the browser publish real host IPs.
     if (MDNS.test(ip)) {
-      mdnsOnly = true;
+      sawMdns = true;
       continue;
     }
-    if (LINK_LOCAL.test(ip) || seen.has(key)) continue;
+    if (LINK_LOCAL.test(ip)) {
+      sawLinkLocal = true;
+      continue;
+    }
+    if (seen.has(key)) continue;
     seen.add(key);
     cands.push({ ip, port, proto: "udp" });
   }
-  if (mdnsOnly && cands.length === 0) {
-    throw new CodecError("only mDNS candidates found — camera permission missing, cannot pair");
+  // Each empty outcome gets its own diagnosis: the camera message is only right when an mDNS
+  // name was actually offered — a link-local-only gather is a network problem, not a permission one.
+  if (cands.length === 0) {
+    if (sawMdns) {
+      throw new CodecError("only mDNS candidates found — camera permission missing, cannot pair");
+    }
+    if (sawLinkLocal) {
+      throw new CodecError(
+        "no usable host candidate — only link-local addresses were gathered; check the LAN connection",
+      );
+    }
+    throw new CodecError("no host candidates in sdp");
   }
   const result = SdpPayloadSchema.safeParse({ v: 1, role, ws, mid, ufrag, pwd, fp, setup, cands });
   if (!result.success) {
