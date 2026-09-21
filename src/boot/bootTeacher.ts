@@ -32,10 +32,12 @@ async function bootTeacherUncached(): Promise<LabController> {
     ...(certificates ? { certificates } : {}),
     log: (m) => console.warn("[teacher]", m),
   });
-  registerTestHook("teacher", async (wire) => {
-    const p = await decodeWire(wire);
-    if (p.role !== "offer") throw new Error("teacher expects an offer");
-    return encodeWire(await lab.acceptOffer(p));
-  });
+  if (import.meta.env.DEV) {
+    registerTestHook("teacher", async (wire) => {
+      const p = await decodeWire(wire);
+      if (p.role !== "offer") throw new Error("teacher expects an offer");
+      return encodeWire(await lab.acceptOffer(p));
+    });
+  }
   return lab;
 }

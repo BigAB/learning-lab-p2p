@@ -6,12 +6,6 @@ import { useLabRoster } from "../../hooks/useLabRoster";
 import { usePromise } from "../../hooks/usePromise";
 import { Tile } from "../teacher/Tile";
 
-const OfferMsg = z.object({
-  type: z.literal("lab-offer"),
-  ws: z.number().int().min(1).max(30),
-  wire: z.string().startsWith("LAB1:"),
-});
-
 export function LoadPage({ boot }: { boot: Promise<LabController> }) {
   const { value: lab } = usePromise(boot);
   const [count, setCount] = useState(30);
@@ -37,7 +31,16 @@ function Load({
   const wsList = useMemo(() => Array.from({ length: count }, (_, i) => i + 1), [count]);
 
   useEffect(() => {
+    // Declared here, not at module scope: a top-level z.object() call is a side effect rollup
+    // cannot prove away, which kept this dev-only module (and its message names) in the
+    // production bundle even once main.tsx stopped routing to it.
+    const OfferMsg = z.object({
+      type: z.literal("lab-offer"),
+      ws: z.number().int().min(1).max(30),
+      wire: z.string().startsWith("LAB1:"),
+    });
     const onMsg = (ev: MessageEvent) => {
+      if (ev.origin !== location.origin) return;
       const m = OfferMsg.safeParse(ev.data);
       if (!m.success) return;
       void (async () => {
@@ -45,7 +48,7 @@ function Load({
           const answer = await lab.acceptOffer(await decodeWire(m.data.wire));
           (ev.source as Window | null)?.postMessage(
             { type: "lab-answer", wire: await encodeWire(answer) },
-            "*",
+            location.origin,
           );
         } catch (e: unknown) {
           if (e instanceof SupersededError) return;

@@ -13,11 +13,6 @@ import { primeCameraPermission } from "../ui/platform/camera";
 import { loadCertificate } from "../ui/platform/cert";
 import { registerTestHook } from "./testHook";
 
-const AnswerMsg = z.object({
-  type: z.literal("lab-answer"),
-  wire: z.string().startsWith("LAB1:"),
-});
-
 export function resolveWs(): { urlWs?: number; storedWs?: number } {
   const out: { urlWs?: number; storedWs?: number } = {};
   const raw = new URLSearchParams(location.search).get("ws");
@@ -83,19 +78,33 @@ async function bootStudentUncached(ws: number): Promise<StudentController> {
     },
     ws,
   );
-  registerTestHook("student", async (wire) => {
-    const p = await decodeWire(wire);
-    await c.session?.applyRemote(p);
-  });
-  if (window.parent !== window && new URLSearchParams(location.search).get("autopair") === "1") {
+  if (import.meta.env.DEV) {
+    registerTestHook("student", async (wire) => {
+      const p = await decodeWire(wire);
+      await c.session?.applyRemote(p);
+    });
+  }
+  // Dev-only /dev/load plumbing: an iframe'd student auto-pairs with the parent LabController.
+  // The schema lives inside the guard so a production build drops the whole feature, parser
+  // included (same reasoning as urlTimers above).
+  if (
+    import.meta.env.DEV &&
+    window.parent !== window &&
+    new URLSearchParams(location.search).get("autopair") === "1"
+  ) {
+    const AnswerMsg = z.object({
+      type: z.literal("lab-answer"),
+      wire: z.string().startsWith("LAB1:"),
+    });
     c.on("session", (s) => {
       s.on("localPayload", (p) => {
         void encodeWire(p).then((wire) =>
-          window.parent.postMessage({ type: "lab-offer", ws, wire }, "*"),
+          window.parent.postMessage({ type: "lab-offer", ws, wire }, location.origin),
         );
       });
     });
     window.addEventListener("message", (ev) => {
+      if (ev.origin !== location.origin) return;
       const m = AnswerMsg.safeParse(ev.data);
       if (!m.success) return;
       void decodeWire(m.data.wire)

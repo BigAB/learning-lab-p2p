@@ -54,9 +54,10 @@ function route() {
       return <TeacherApp boot={bootTeacher()} />;
     case "/courier":
       return <CourierApp />;
-    case "/dev/load":
-      return <LoadPage boot={bootTeacher()} />;
     default:
+      // Dev only, and inside the default arm rather than its own `case` so that a production
+      // build drops the route, its path string and the LoadPage module altogether.
+      if (import.meta.env.DEV && path === "/dev/load") return <LoadPage boot={bootTeacher()} />;
       return <HomePage />;
   }
 }
