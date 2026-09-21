@@ -158,3 +158,42 @@ test("mDNS candidates are skipped when a literal IP is also offered", () => {
     { ip: "192.168.1.42", port: 54322, proto: "udp" },
   ]);
 });
+
+test("link-local-only SDP names link-local, never blames camera permission", () => {
+  const sdp = sdpWith([
+    ["169.254.10.5", 54321],
+    ["fe80::1", 54322],
+  ]);
+  assert.throws(
+    () => extractPayload(sdp, "offer", 7),
+    (e: unknown) => {
+      assert.ok(e instanceof CodecError);
+      assert.match(e.message, /link-local/);
+      assert.doesNotMatch(e.message, /mDNS|camera/);
+      return true;
+    },
+  );
+});
+
+test("SDP with no host candidates at all says so", () => {
+  assert.throws(
+    () => extractPayload(sdpWith([]), "offer", 7),
+    (e: unknown) => {
+      assert.ok(e instanceof CodecError);
+      assert.match(e.message, /no host candidates/);
+      assert.doesNotMatch(e.message, /mDNS|camera|link-local/);
+      return true;
+    },
+  );
+});
+
+test("mDNS plus link-local and nothing else still points at camera permission", () => {
+  const sdp = sdpWith([
+    ["8f2a1b3c-4d5e-6f70-8192-a3b4c5d6e7f8.local", 54321],
+    ["169.254.10.5", 54322],
+  ]);
+  assert.throws(() => extractPayload(sdp, "offer", 7), {
+    name: "CodecError",
+    message: /only mDNS candidates found — camera permission missing/,
+  });
+});

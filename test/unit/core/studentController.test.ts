@@ -216,7 +216,7 @@ test("start() rejection: session dropped, error emitted, respawn backs off expon
   assert.equal(ctx.c.session, null, "the dead session must not stay current");
   assert.equal(ctx.rtc.pcs.length, 1);
   assert.equal(errors.length, 1);
-  assert.match(errors[0]!, /sdp/i);
+  assert.match(errors[0]!, /link-local/);
 
   ctx.clock.advance(499);
   await flush();

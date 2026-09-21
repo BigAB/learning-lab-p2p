@@ -96,7 +96,7 @@ Reconstruct a full SDP from a fixed template: one `m=application 9 UDP/DTLS/SCTP
 
 The template is validated by Playwright roundtrips WebKit↔Chromium against captured fixtures (§8). Any change to the template requires those tests to pass in both directions.
 
-**mDNS candidates are refused at extraction.** A `<uuid>.local` host candidate means the origin never got the camera grant (§1.1.4) and the peer would have to resolve it over multicast DNS the lab LAN may not carry. Such candidates are skipped; if nothing with a literal IP remains, extraction throws `CodecError("only mDNS candidates found — camera permission missing, cannot pair")` rather than producing a payload that can never connect.
+**mDNS candidates are refused at extraction.** A `<uuid>.local` host candidate means the origin never got the camera grant (§1.1.4) and the peer would have to resolve it over multicast DNS the lab LAN may not carry. Such candidates are skipped, as are link-local ones (`169.254.*`, `fe80::*`). If nothing usable remains, extraction throws a `CodecError` whose message names the actual cause rather than producing a payload that can never connect: `only mDNS candidates found — camera permission missing, cannot pair` **only when a `.local` candidate was present**; `no usable host candidate — only link-local addresses were gathered; check the LAN connection` when the gather was link-local only; `no host candidates in sdp` when there were none at all.
 
 ### 3.3 Failure mode
 CRC mismatch or Zod failure → payload rejected at the boundary; courier flashes red and stays scanning. `setRemoteDescription` rejection → UI shows the error message (student: a toast; teacher: inline in the scan modal).
