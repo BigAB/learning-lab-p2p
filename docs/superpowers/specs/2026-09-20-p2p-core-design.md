@@ -170,7 +170,7 @@ Single channel `"lab"`, ordered, reliable, JSON, discriminated on `t`. Envelope 
 | `hb` / `hb-ack` | both | `{ seq, ts }` | Heartbeat / RTT |
 | `status` | student → teacher, on change | `{ battery?, charging?, visibility, wakeLock }` | Dashboard hints ("unplugged", "screen hidden") |
 | `cmd` | teacher → student | `{ cmd: "reload" \| "show-id" \| "ping" }` | Remote actions; `reload` = deliberate re-pair from the desk |
-| `chunk` | both | `{ id, i, n, data }` | Reassembly frame for messages > 16 KB (Safari DC limit); built now, used by Phase 2 SDP |
+| `chunk` | both | `{ id, i, n, data }` | Reassembly frame for messages > 16 KB (Safari DC limit); built now, used by Phase 2 SDP. The reassembler buffers ≤ 8 in-flight ids; duplicates, out-of-range indices and the buffered chunks of an evicted id all count as dropped |
 
 ### 5.2 Reserved namespaces (typed as empty unions now)
 - `media.*` — Phase 2: `media.offer` / `media.answer` (full SDP), `media.request {kind, res}` for per-peer quality bumps.

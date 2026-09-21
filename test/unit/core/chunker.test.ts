@@ -91,3 +91,15 @@ test("Reassembler counts duplicate and out-of-range chunks as dropped", () => {
   assert.equal(r.push({ t: "chunk", id: "x", i: 1, n: 2, data: "cd" }), "abcd");
   assert.equal(r.dropped, 2, "accepted chunks are not counted");
 });
+
+test("Reassembler counts the chunks of an evicted id as dropped", () => {
+  const r = new Reassembler(2);
+  r.push({ t: "chunk", id: "a", i: 0, n: 3, data: "a0" });
+  r.push({ t: "chunk", id: "a", i: 1, n: 3, data: "a1" });
+  r.push({ t: "chunk", id: "b", i: 0, n: 2, data: "b0" });
+  assert.equal(r.dropped, 0);
+  r.push({ t: "chunk", id: "c", i: 0, n: 2, data: "c0" }); // evicts "a", which held 2 chunks
+  assert.equal(r.dropped, 2, "the two buffered chunks of 'a' were thrown away");
+  assert.equal(r.push({ t: "chunk", id: "c", i: 1, n: 2, data: "c1" }), "c0c1");
+  assert.equal(r.dropped, 2, "completing 'c' drops nothing");
+});
