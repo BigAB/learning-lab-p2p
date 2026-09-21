@@ -39,3 +39,34 @@ test("compact form requires 43-char base64url fingerprint", () => {
   assert.equal(CompactPayloadSchema.safeParse({ ...c, f: "A".repeat(42) }).success, false);
   assert.equal(CompactPayloadSchema.safeParse({ ...c, f: "!".repeat(43) }).success, false);
 });
+
+test("rejects SDP-injection charsets in ip, ufrag, pwd and mid", () => {
+  const bad = (patch: Record<string, unknown>) => SdpPayloadSchema.safeParse({ ...base, ...patch });
+  assert.equal(
+    bad({ cands: [{ ip: "192.168.1.42\r\na=evil:1", port: 1, proto: "udp" }] }).success,
+    false,
+  );
+  assert.equal(bad({ cands: [{ ip: "abc.local", port: 1, proto: "udp" }] }).success, false);
+  assert.equal(bad({ ufrag: "kJ3q\r\na=evil:1" }).success, false);
+  assert.equal(bad({ pwd: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul\r\nx" }).success, false);
+  assert.equal(bad({ mid: "0 evil" }).success, false);
+  // The real-world charsets still pass.
+  assert.equal(bad({ ufrag: "a+b/c-d_e=", pwd: "A".repeat(21) + "+/=-_" }).success, true);
+});
+
+test("compact form applies the same charset rules", () => {
+  const c = {
+    v: 1,
+    r: "o",
+    w: 7,
+    m: "0",
+    u: "kJ3q",
+    p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
+    f: "A".repeat(43),
+    s: "actpass",
+    c: [["192.168.1.42", 54321]],
+  };
+  assert.equal(CompactPayloadSchema.safeParse({ ...c, c: [["10.0.0.1\r\nx", 1]] }).success, false);
+  assert.equal(CompactPayloadSchema.safeParse({ ...c, u: "kJ3q\r\n" }).success, false);
+  assert.equal(CompactPayloadSchema.safeParse({ ...c, m: "0;" }).success, false);
+});

@@ -9,6 +9,7 @@ export class CodecError extends Error {
 }
 
 const LINK_LOCAL = /^(169\.254\.|fe80:)/i;
+const MDNS = /\.local$/i;
 const CANDIDATE = /^a=candidate:\S+ 1 udp \d+ (\S+) (\d+) typ host/i;
 
 export function extractPayload(sdp: string, role: "offer" | "answer", ws: number): SdpPayload {
@@ -30,15 +31,26 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
 
   const cands: Candidate[] = [];
   const seen = new Set<string>();
+  let mdnsOnly = false;
   for (const l of lines) {
     const m = CANDIDATE.exec(l);
     if (!m) continue;
     const ip = m[1]!;
     const port = Number(m[2]);
     const key = `${ip}:${port}`;
+    // An `<uuid>.local` candidate is mDNS obfuscation: the peer would have to resolve it over
+    // multicast DNS, which the lab LAN may not carry. It means the origin never got the camera
+    // grant that makes the browser publish real host IPs.
+    if (MDNS.test(ip)) {
+      mdnsOnly = true;
+      continue;
+    }
     if (LINK_LOCAL.test(ip) || seen.has(key)) continue;
     seen.add(key);
     cands.push({ ip, port, proto: "udp" });
+  }
+  if (mdnsOnly && cands.length === 0) {
+    throw new CodecError("only mDNS candidates found — camera permission missing, cannot pair");
   }
   const result = SdpPayloadSchema.safeParse({ v: 1, role, ws, mid, ufrag, pwd, fp, setup, cands });
   if (!result.success) {

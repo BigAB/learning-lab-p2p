@@ -121,3 +121,40 @@ test("decodeWire rejects a non-base64url compact fingerprint without leaking a r
   const wire = `${WIRE_PREFIX}${toBase64Url(packed)}${crc8(packed).toString(16).padStart(2, "0")}`;
   await assert.rejects(decodeWire(wire), CodecError);
 });
+
+/** Build a minimal DataChannel SDP with exactly the given `a=candidate:` address/port pairs. */
+function sdpWith(cands: [string, number][]): string {
+  return [
+    "v=0",
+    "o=- 1 1 IN IP4 127.0.0.1",
+    "s=-",
+    "t=0 0",
+    "a=group:BUNDLE 0",
+    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+    "c=IN IP4 0.0.0.0",
+    ...cands.map(([ip, port], i) => `a=candidate:${i + 1} 1 udp 2122260223 ${ip} ${port} typ host`),
+    "a=ice-ufrag:kJ3q",
+    "a=ice-pwd:Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
+    "a=fingerprint:sha-256 7B:8B:F0:65:5F:78:E2:51:3B:AC:6F:F3:3F:46:1B:35:DC:B8:5F:64:1A:24:C2:43:F0:A1:58:D0:A1:2C:19:08",
+    "a=setup:actpass",
+    "a=mid:0",
+  ].join("\r\n");
+}
+
+test("mDNS-only SDP is refused with the camera-permission message", () => {
+  const sdp = sdpWith([["8f2a1b3c-4d5e-6f70-8192-a3b4c5d6e7f8.local", 54321]]);
+  assert.throws(() => extractPayload(sdp, "offer", 7), {
+    name: "CodecError",
+    message: /only mDNS candidates found — camera permission missing/,
+  });
+});
+
+test("mDNS candidates are skipped when a literal IP is also offered", () => {
+  const sdp = sdpWith([
+    ["8f2a1b3c-4d5e-6f70-8192-a3b4c5d6e7f8.local", 54321],
+    ["192.168.1.42", 54322],
+  ]);
+  assert.deepEqual(extractPayload(sdp, "offer", 7).cands, [
+    { ip: "192.168.1.42", port: 54322, proto: "udp" },
+  ]);
+});
