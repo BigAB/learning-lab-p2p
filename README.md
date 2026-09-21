@@ -22,3 +22,7 @@ pnpm test:e2e    # playwright (pnpm exec playwright install --with-deps chromium
 ## Deploy
 
 Push to `main`. Pages workflow sets `VITE_BASE=/<repo>/` and bakes the short SHA into the UI as the app version.
+
+## License
+
+UNLICENSED
