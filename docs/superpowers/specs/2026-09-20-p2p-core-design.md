@@ -251,7 +251,7 @@ Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge Q
 - Two contexts on one machine (student + teacher) P2P over loopback. Camera bypass: test reads `data-payload` attribute from the QR element and injects it into the other context via `page.evaluate` (simulated courier). Assert `connected` + heartbeats.
 - Failure path: close student context → teacher tile degraded → failed within shortened timers; new context re-pairs.
 - Codec through real browsers: the roundtrip spec (`codec.spec.ts`) runs **per engine** — Chromium and WebKit each extract → encode → decode → rebuild → `setRemoteDescription` in both directions within their own engine. A single cross-process WebKit-offer → Chromium-answer handoff is a follow-up.
-- One real-scanner test (`--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`) is a **follow-up**, not Phase 1: the suite bypasses the camera through the `data-payload` attribute instead.
+- One real-scanner test (`scanner.spec.ts`, Chromium only): the student's offer wire is rendered into a Y4M clip (`test/e2e/qrVideo.ts`) that a second browser plays as the teacher's camera via `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`. The teacher's answer QR appears only if `<Scanner>` decoded the frames, so the camera → decode → `acceptOffer` path is covered end to end; the rest of the suite still bypasses the camera through `data-payload`.
 
 ### 8.3 Manual — `docs/lab-checklist.md`
 30-iPad smoke; 10 s WiFi pull → amber → green; 90 s → red → re-pair; teacher tab reload → re-pair all; overnight soak.

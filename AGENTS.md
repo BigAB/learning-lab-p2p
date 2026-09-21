@@ -55,7 +55,7 @@ pnpm build          # vite build → dist/
 ## Testing expectations
 
 - Unit: `test/unit/**` — core + schemas, `FakeRTCPeerConnection` for state-machine tests.
-- E2E: `test/e2e/**` — two browser contexts P2P over loopback; camera bypassed by reading the QR element's `data-payload` and injecting into the other context. Keep that attribute.
+- E2E: `test/e2e/**` — two browser contexts P2P over loopback; camera bypassed by reading the QR element's `data-payload` and injecting into the other context. Keep that attribute. `scanner.spec.ts` is the exception: it feeds a generated QR clip to Chromium's fake camera so the real `<Scanner>` path is exercised.
 - Fixtures: `test/fixtures/sdp/` — real captured SDPs from Safari and Chrome. Add one when you see a new browser variant.
 - Manual: `docs/lab-checklist.md` before any lab day.
 
