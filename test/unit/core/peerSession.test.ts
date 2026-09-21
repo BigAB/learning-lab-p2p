@@ -361,3 +361,15 @@ test("a throwing state listener does not suppress side effects", async () => {
   assert.equal(reasons.length, 1);
   assert.equal(s.state, "failed");
 });
+
+test("student rejects an answer addressed to another workstation", async () => {
+  const { rtc, s } = student();
+  const p = s.start();
+  await flush();
+  rtc.last().completeGathering();
+  await p;
+  const foreign = extractPayload(SAFARI_ANSWER, "answer", 9);
+  await assert.rejects(s.applyRemote(foreign), /workstation 9, not 7/);
+  assert.equal(s.state, "awaiting-remote");
+  assert.equal(rtc.last().remoteDescription, null, "the pc must not be touched");
+});

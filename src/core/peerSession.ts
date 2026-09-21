@@ -97,6 +97,10 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
     if (this.role === "student") {
       if (this.state !== "awaiting-remote") throw new Error(`applyRemote in state ${this.state}`);
       if (remote.role !== "answer") throw new Error("student expects an answer");
+      // The courier walks several answers around the room; scanning the wrong one must be a
+      // plain refusal, not a half-applied remote description on a PC that can never connect.
+      if (remote.ws !== this.ws)
+        throw new Error(`This code is for workstation ${remote.ws}, not ${this.ws}`);
       if (!this.pc) throw new Error("no peer connection");
       await this.pc.setRemoteDescription({ type: "answer", sdp: buildSdp(remote) });
       if (this.done) return;
