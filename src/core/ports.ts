@@ -2,6 +2,10 @@ export interface RtcFactory {
   create(config: RTCConfiguration): RTCPeerConnection;
 }
 
+/**
+ * Implementations must never throw; wrap the underlying storage (see `browserKv`). Core relies
+ * on this so `loadState`/`saveState` can stay simple.
+ */
 export interface KeyValueStore {
   get(key: string): string | null;
   set(key: string, value: string): void;
