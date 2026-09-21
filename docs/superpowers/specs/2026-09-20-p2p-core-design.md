@@ -46,7 +46,7 @@ One app, three roles selected by pathname:
 Dev-only surfaces — `/dev/load`, `window.__lab` (e2e injection hook), `window.__labCodec`, the `?timers=` watchdog override and the iframe `autopair` bridge — are all behind `import.meta.env.DEV`. A production bundle contains none of them (`grep -c '__lab\b\|lab-offer\|lab-answer\|dev/load' dist/assets/*.js` → 0); Playwright runs against `pnpm dev`, so e2e still has them.
 
 ### 2.1 Student startup
-1. Read `ws` from URL (fallback: persisted value; conflict → prompt, see §6).
+1. Read `ws` from URL (fallback: persisted value; conflict → prompt, see §6). Neither present → a full-screen **workstation picker** (1–30); the choice is persisted, so it appears once per iPad. This is the Home Screen web-app path: iPadOS isolates the standalone app's storage from Safari's, so a `ws` chosen in Safari before "Add to Home Screen" is not visible to the installed app.
 2. Request `getUserMedia({video:true})` once to obtain permission (stream stopped immediately). Ensures real-IP candidates.
 3. Create `RTCPeerConnection({ certificates:[cert] })` with the persisted DTLS certificate (§6). Create DataChannel `"lab"` (ordered, reliable).
 4. `createOffer` → `setLocalDescription` → wait for `iceGatheringState === "complete"` (no STUN configured → fast).
@@ -191,7 +191,7 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
 ```ts
 { ws: number; teacherAppVersion?: string; lastConnectedAt?: number; pairCount: number }
 ```
-`ws` from URL on first load, then persisted so the Home Screen app launches without a query string. If URL is present and differs → prompt "This iPad was ws 7, URL says 9 — switch?". If `?ws=` is present but *invalid*, the page says so ("Invalid ?ws in URL — using saved workstation N", or an explanation on the dead-end screen) instead of falling back silently.
+`ws` from URL on first load, then persisted so the Home Screen app launches without a query string. If URL is present and differs → prompt "This iPad was ws 7, URL says 9 — switch?". If `?ws=` is present but *invalid*, the page says so ("Invalid ?ws in URL — using saved workstation N", or the same notice above the picker when nothing is saved) instead of falling back silently.
 
 `pairCount` counts **pairings** — `connecting → connected` transitions — not recoveries: an ICE blip that goes `degraded → connected` is the same pairing continuing.
 

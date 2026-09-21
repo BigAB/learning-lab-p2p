@@ -9,6 +9,7 @@ import { LoadPage } from "./ui/dev/LoadPage";
 import { HomePage } from "./ui/HomePage";
 import { StudentApp } from "./ui/student/StudentApp";
 import { WsConflict } from "./ui/student/WsConflict";
+import { WsPicker } from "./ui/student/WsPicker";
 import { TeacherApp } from "./ui/teacher/TeacherApp";
 import "./ui/shared/styles.css";
 
@@ -39,14 +40,13 @@ function StudentRoute() {
   }
   if (boot === undefined)
     return (
-      <div className="center">
-        <h1>Open this page as /student?ws=N (1–30)</h1>
-        {urlInvalid && (
-          <p className="meta" data-ws-notice>
-            The ?ws value in this URL is not a workstation number (1–30).
-          </p>
-        )}
-      </div>
+      <WsPicker
+        urlInvalid={urlInvalid}
+        onPick={(w) => {
+          setWs(w);
+          setBoot(bootStudent(w));
+        }}
+      />
     );
   // A typo'd web-clip URL silently booting the saved workstation is how two iPads end up
   // fighting over one ws; say which number is actually in use.
