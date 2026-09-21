@@ -79,3 +79,15 @@ test("Reassembler evicts oldest id when exceeding maxPending", () => {
   const cResult = r.push({ t: "chunk", id: "c", i: 1, n: 2, data: "c1" });
   assert.equal(cResult, "c0c1");
 });
+
+test("Reassembler counts duplicate and out-of-range chunks as dropped", () => {
+  const r = new Reassembler();
+  assert.equal(r.dropped, 0);
+  r.push({ t: "chunk", id: "x", i: 0, n: 2, data: "ab" });
+  r.push({ t: "chunk", id: "x", i: 0, n: 2, data: "ab" }); // duplicate index
+  assert.equal(r.dropped, 1);
+  r.push({ t: "chunk", id: "x", i: 5, n: 2, data: "zz" }); // out of range
+  assert.equal(r.dropped, 2);
+  assert.equal(r.push({ t: "chunk", id: "x", i: 1, n: 2, data: "cd" }), "abcd");
+  assert.equal(r.dropped, 2, "accepted chunks are not counted");
+});

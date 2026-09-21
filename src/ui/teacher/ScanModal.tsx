@@ -4,6 +4,9 @@ import { decodeWire, encodeWire } from "../../core/sdpCodec";
 import { QrView } from "../shared/QrView";
 import { Scanner } from "../shared/Scanner";
 
+/** How long the just-answered offer stays ignored after "Done — scan next". */
+const IGNORE_REPEAT_MS = 3000;
+
 export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () => void }) {
   const [answer, setAnswer] = useState<{ wire: string; ws: number } | undefined>();
   const [error, setError] = useState<string | undefined>();
@@ -13,6 +16,11 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
   // before the `pending` state update from the first has re-rendered. A ref makes the "already
   // answering one offer" check immediate instead of racing the render.
   const busy = useRef(false);
+  // The offer we just answered, and when we dismissed its answer QR. The student's screen still
+  // shows that same offer for a moment after "Done — scan next", so a camera pointed back at it
+  // would immediately re-pair the station it had only just finished.
+  const justAnswered = useRef<{ wire: string; at: number } | undefined>(undefined);
+  const scanned = useRef<string | undefined>(undefined);
   const deviceId = lab.settings.cameraDeviceId;
 
   useEffect(() => {
@@ -24,6 +32,8 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
   const onWire = useCallback(
     (wire: string) => {
       if (busy.current) return;
+      const recent = justAnswered.current;
+      if (recent && recent.wire === wire && Date.now() - recent.at < IGNORE_REPEAT_MS) return;
       busy.current = true;
       setPending(true);
       void (async () => {
@@ -31,6 +41,7 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
           const p = await decodeWire(wire);
           if (p.role !== "offer") throw new Error("That is an answer code; scan a student's offer");
           const a = await lab.acceptOffer(p);
+          scanned.current = wire;
           setAnswer({ wire: await encodeWire(a), ws: p.ws });
           setError(undefined);
         } catch (e) {
@@ -76,7 +87,15 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
             <h2>Answer for workstation {answer.ws}</h2>
             <QrView wire={answer.wire} role="answer" ws={answer.ws} size={420} />
             <p>Scan this with the phone, then show the phone to iPad {answer.ws}.</p>
-            <button onClick={() => setAnswer(undefined)}>Done — scan next</button>
+            <button
+              onClick={() => {
+                if (scanned.current !== undefined)
+                  justAnswered.current = { wire: scanned.current, at: Date.now() };
+                setAnswer(undefined);
+              }}
+            >
+              Done — scan next
+            </button>
           </>
         )}
         {error && <p style={{ color: "var(--red)" }}>{error}</p>}

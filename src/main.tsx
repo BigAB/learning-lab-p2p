@@ -16,7 +16,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const path = location.pathname.replace(base, "").replace(/\/+$/, "") || "/";
 
 function StudentRoute() {
-  const { urlWs, storedWs } = resolveWs();
+  const { urlWs, storedWs, urlInvalid } = resolveWs();
   const [ws, setWs] = useState<number | undefined>(
     urlWs !== undefined && storedWs !== undefined && urlWs !== storedWs
       ? undefined
@@ -41,9 +41,25 @@ function StudentRoute() {
     return (
       <div className="center">
         <h1>Open this page as /student?ws=N (1–30)</h1>
+        {urlInvalid && (
+          <p className="meta" data-ws-notice>
+            The ?ws value in this URL is not a workstation number (1–30).
+          </p>
+        )}
       </div>
     );
-  return <StudentApp boot={boot} />;
+  // A typo'd web-clip URL silently booting the saved workstation is how two iPads end up
+  // fighting over one ws; say which number is actually in use.
+  return (
+    <>
+      {urlInvalid && ws !== undefined && (
+        <p className="meta" data-ws-notice>
+          Invalid ?ws in URL — using saved workstation {ws}
+        </p>
+      )}
+      <StudentApp boot={boot} />
+    </>
+  );
 }
 
 function route() {

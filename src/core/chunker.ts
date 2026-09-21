@@ -47,6 +47,8 @@ interface Pending {
 
 export class Reassembler {
   private pending = new Map<string, Pending>();
+  /** Chunks thrown away as duplicates or out-of-range; PeerSession counts them as ignored. */
+  dropped = 0;
 
   constructor(private readonly maxPending = 8) {}
 
@@ -62,7 +64,10 @@ export class Reassembler {
       p = { n: c.n, parts: new Array<string | undefined>(c.n), got: 0 };
       this.pending.set(c.id, p);
     }
-    if (c.i >= p.n || p.parts[c.i] !== undefined) return undefined;
+    if (c.i >= p.n || p.parts[c.i] !== undefined) {
+      this.dropped++;
+      return undefined;
+    }
     p.parts[c.i] = c.data;
     p.got++;
     if (p.got < p.n) return undefined;

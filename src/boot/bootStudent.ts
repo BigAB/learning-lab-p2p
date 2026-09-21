@@ -13,10 +13,17 @@ import { primeCameraPermission } from "../ui/platform/camera";
 import { loadCertificate } from "../ui/platform/cert";
 import { registerTestHook } from "./testHook";
 
-export function resolveWs(): { urlWs?: number; storedWs?: number } {
-  const out: { urlWs?: number; storedWs?: number } = {};
+export interface ResolvedWs {
+  urlWs?: number;
+  storedWs?: number;
+  /** `?ws=` was present but not a workstation number — the UI must say so, not fall back mutely. */
+  urlInvalid: boolean;
+}
+
+export function resolveWs(): ResolvedWs {
   const raw = new URLSearchParams(location.search).get("ws");
   const parsed = WsParamSchema.safeParse(raw);
+  const out: ResolvedWs = { urlInvalid: raw !== null && !parsed.success };
   if (raw !== null && parsed.success) out.urlWs = parsed.data;
   const stored = StudentController.persistedWs(browserKv);
   if (stored !== undefined) out.storedWs = stored;

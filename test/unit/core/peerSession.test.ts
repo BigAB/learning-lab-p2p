@@ -373,3 +373,43 @@ test("student rejects an answer addressed to another workstation", async () => {
   assert.equal(s.state, "awaiting-remote");
   assert.equal(rtc.last().remoteDescription, null, "the pc must not be touched");
 });
+
+test("a duplicate chunk frame is ignored and counted", async () => {
+  const { dc, s } = await connectedStudent();
+  const got: unknown[] = [];
+  s.on("message", (m) => got.push(m));
+  const whole = JSON.stringify({ t: "cmd", cmd: "show-id" });
+  const before = s.ignoredCount;
+  dc.receive(JSON.stringify({ t: "chunk", id: "y", i: 0, n: 2, data: whole.slice(0, 5) }));
+  dc.receive(JSON.stringify({ t: "chunk", id: "y", i: 0, n: 2, data: whole.slice(0, 5) }));
+  assert.equal(s.ignoredCount, before + 1);
+  dc.receive(JSON.stringify({ t: "chunk", id: "y", i: 1, n: 2, data: whole.slice(5) }));
+  assert.deepEqual(got, [{ t: "cmd", cmd: "show-id" }]);
+  assert.equal(s.ignoredCount, before + 1, "the completing chunk is not counted");
+});
+
+test("teacher: a second incoming datachannel is closed and ignored", async () => {
+  const rtc = new FakeRtcFactory();
+  const t = new PeerSession({
+    role: "teacher",
+    ws: 7,
+    rtc,
+    clock: new FakeClock(),
+    timers: TIMERS,
+    appVersion: "t1",
+    ua: "mac",
+  });
+  const p = t.applyRemote(offerPayload);
+  await flush();
+  rtc.last().completeGathering();
+  await p;
+  const first = rtc.last().incomingChannel();
+  first.open();
+  assert.equal(t.state, "connected");
+  const second = rtc.last().incomingChannel();
+  assert.equal(second.readyState, "closed", "the newcomer is closed");
+  assert.equal(t.ignoredCount, 1);
+  assert.equal(first.readyState, "open", "the live channel is untouched");
+  t.send({ t: "cmd", cmd: "ping" });
+  assert.deepEqual(first.sentJson().at(-1), { t: "cmd", cmd: "ping" });
+});

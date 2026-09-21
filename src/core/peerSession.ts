@@ -173,6 +173,16 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   }
 
   private attachChannel(dc: RTCDataChannel): void {
+    // One session owns exactly one "lab" channel. A second ondatachannel (a peer that opened two,
+    // or a renegotiation glare) must not silently replace the live one and orphan its handlers.
+    if (this.dc && this.dc !== dc) {
+      try {
+        dc.close();
+      } catch {
+        /* already closed */
+      }
+      return this.ignore("duplicate datachannel");
+    }
     this.dc = dc;
     dc.onopen = () => this.onOpen();
     dc.onclose = () => this.fail("datachannel closed");
@@ -218,8 +228,12 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
     const m = r.data;
     switch (m.t) {
       case "chunk": {
+        const dropped = this.reasm.dropped;
         const whole = this.reasm.push(m);
         if (whole !== undefined) this.onFrame(whole);
+        // A duplicate or out-of-range index is a frame we refused, not a frame we consumed:
+        // count it like any other ignored wire input.
+        else if (this.reasm.dropped !== dropped) this.ignore("duplicate chunk");
         return;
       }
       case "hb":

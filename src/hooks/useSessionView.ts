@@ -20,16 +20,23 @@ export function useSessionView(session: PeerSession | null): SessionView {
       state: session.state,
       ...(session.lastRtt !== undefined ? { rtt: session.lastRtt } : {}),
     });
+    // encodeWire is async: without this flag a payload encoded just before the session was
+    // replaced would land after cleanup and paint the previous session's QR over the new one.
+    let live = true;
     const offs = [
       session.on("state", (s) => setView((v) => ({ ...v, state: s }))),
       session.on("rtt", (rtt) => setView((v) => ({ ...v, rtt }))),
       session.on("localPayload", (p) => {
-        void encodeWire(p).then((localWire) =>
-          setView((v) => ({ ...v, localWire, localRole: p.role })),
-        );
+        void encodeWire(p).then((localWire) => {
+          if (!live) return;
+          setView((v) => ({ ...v, localWire, localRole: p.role }));
+        });
       }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => {
+      live = false;
+      offs.forEach((off) => off());
+    };
   }, [session]);
   return view;
 }
