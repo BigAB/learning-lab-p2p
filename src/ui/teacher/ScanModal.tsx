@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SupersededError, type LabController } from "../../core/labController";
 import { decodeWire, encodeWire } from "../../core/sdpCodec";
 import { QrView } from "../shared/QrView";
@@ -8,6 +8,11 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
   const [answer, setAnswer] = useState<{ wire: string; ws: number } | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [pending, setPending] = useState(false);
+  // Synchronous guard: onWire fires from a requestAnimationFrame loop, so a second scan can land
+  // before the `pending` state update from the first has re-rendered. A ref makes the "already
+  // answering one offer" check immediate instead of racing the render.
+  const busy = useRef(false);
   const deviceId = lab.settings.cameraDeviceId;
 
   useEffect(() => {
@@ -18,6 +23,9 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
 
   const onWire = useCallback(
     (wire: string) => {
+      if (busy.current) return;
+      busy.current = true;
+      setPending(true);
       void (async () => {
         try {
           const p = await decodeWire(wire);
@@ -30,6 +38,9 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
           // superseding scan is the one that matters, so this rejection is not a user-facing error.
           if (e instanceof SupersededError) return;
           setError((e as Error).message);
+        } finally {
+          busy.current = false;
+          setPending(false);
         }
       })();
     },
@@ -45,6 +56,7 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
           <>
             <h2>Scan a student's code</h2>
             <Scanner {...(deviceId ? { deviceId } : {})} onWire={onWire} onError={onScanError} />
+            {pending && <p className="meta">Processing…</p>}
             {devices.length > 1 && (
               <select
                 value={deviceId ?? ""}
