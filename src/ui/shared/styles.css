@@ -101,6 +101,17 @@ button.secondary {
   gap: 10px;
   padding: 12px;
 }
+/* 30 big targets on an iPad held at arm's length: 6 columns of ≥ 64 px buttons. */
+.ws-picker {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(64px, 96px));
+  gap: 12px;
+}
+.ws-picker button {
+  font-size: 1.6rem;
+  font-weight: 800;
+  padding: 0.5em 0;
+}
 .tile {
   background: #1c1c1c;
   border-radius: 10px;
