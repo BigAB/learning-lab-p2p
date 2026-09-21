@@ -16,6 +16,9 @@ export function TileDrawer({
   onClose: () => void;
 }) {
   const [label, setLabel] = useState(t.label ?? "");
+  // The verdict compares *this* pairing's certificate with the last one. With no session this
+  // run there is nothing to compare, so only the stored fingerprint itself is shown.
+  const hasSession = t.state !== "never";
   return (
     <div className="modal" onClick={onClose}>
       <div className="card" onClick={(e) => e.stopPropagation()} style={{ alignItems: "stretch" }}>
@@ -33,6 +36,7 @@ export function TileDrawer({
         <p className="meta" data-fingerprint>
           Device fingerprint: {t.fingerprint ? shortFingerprint(t.fingerprint) : "—"}
           {t.fingerprint &&
+            hasSession &&
             (t.fingerprintChanged
               ? " · ⚠️ different device than last pairing"
               : " · same device as last pairing")}
