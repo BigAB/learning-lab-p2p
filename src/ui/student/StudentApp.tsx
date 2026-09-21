@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StudentController } from "../../core/studentController";
 import { decodeWire } from "../../core/sdpCodec";
 import { usePromise } from "../../hooks/usePromise";
@@ -33,14 +33,20 @@ function StudentView({ c }: { c: StudentController }) {
   const [scanning, setScanning] = useState(false);
   const [toast, setToast] = useState<string | undefined>();
   const [showId, setShowId] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const showToast = useCallback((msg: string, ms: number) => {
+    clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = setTimeout(() => setToast(undefined), ms);
+  }, []);
+
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   useEffect(() => {
     if (view.state === "connected") setScanning(false);
-    if (view.state === "failed") {
-      setToast("Connection lost — showing a new code");
-      setTimeout(() => setToast(undefined), 4000);
-    }
-  }, [view.state]);
+    if (view.state === "failed") showToast("Connection lost — showing a new code", 4000);
+  }, [view.state, showToast]);
 
   useEffect(() => {
     if (lastCmd?.cmd === "show-id") {
@@ -54,12 +60,14 @@ function StudentView({ c }: { c: StudentController }) {
     (wire: string) => {
       void decodeWire(wire)
         .then((p) => session?.applyRemote(p))
-        .catch((e: unknown) => {
-          setToast(`Not a valid code: ${(e as Error).message}`);
-          setTimeout(() => setToast(undefined), 3000);
-        });
+        .catch((e: unknown) => showToast(`Not a valid code: ${(e as Error).message}`, 3000));
     },
-    [session],
+    [session, showToast],
+  );
+
+  const onScanError = useCallback(
+    (e: Error) => showToast(`Camera: ${e.message}`, 3000),
+    [showToast],
   );
 
   return (
@@ -80,7 +88,7 @@ function StudentView({ c }: { c: StudentController }) {
         )}
         {view.state === "awaiting-remote" && scanning && (
           <>
-            <Scanner onWire={onWire} onError={(e) => setToast(`Camera: ${e.message}`)} />
+            <Scanner onWire={onWire} onError={onScanError} />
             <p>Hold the phone's code up to the camera</p>
             <button className="secondary" onClick={() => setScanning(false)}>
               Back to my code

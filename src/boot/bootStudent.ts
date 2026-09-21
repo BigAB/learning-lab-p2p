@@ -21,7 +21,20 @@ export function resolveWs(): { urlWs?: number; storedWs?: number } {
   return out;
 }
 
+// StrictMode invokes useState lazy initializers twice on mount, so StudentRoute could otherwise
+// call bootStudent(ws) twice and spawn two controllers/PeerConnections; cache by ws so the second
+// call reuses the in-flight/settled promise instead of booting again.
+const bootCache = new Map<number, Promise<StudentController>>();
+
 export async function bootStudent(ws: number): Promise<StudentController> {
+  const cached = bootCache.get(ws);
+  if (cached) return cached;
+  const p = bootStudentUncached(ws);
+  bootCache.set(ws, p);
+  return p;
+}
+
+async function bootStudentUncached(ws: number): Promise<StudentController> {
   await primeCameraPermission(); // real-IP candidates; failure is non-fatal
   const certificates = await loadCertificate();
   const c = new StudentController(
