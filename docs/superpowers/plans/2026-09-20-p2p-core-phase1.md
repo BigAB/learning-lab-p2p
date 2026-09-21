@@ -28,46 +28,44 @@
 
 ## File map
 
-| Path                                                                       | Responsibility                                                          |
-| -------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `src/schemas/ws.ts`                                                        | Workstation number schemas (number + URL-coercing)                      |
-| `src/schemas/sdpPayload.ts`                                                | `SdpPayload` (rich) and `CompactPayload` (QR JSON) schemas              |
-| `src/schemas/protocol.ts`                                                  | DataChannel message schemas, `LabMessageSchema`, reserved namespaces    |
-| `src/schemas/storage.ts`                                                   | `StudentState`, `TeacherState`, settings schemas + storage keys         |
-| `src/core/events.ts`                                                       | Tiny typed `Emitter`                                                    |
-| `src/core/clock.ts`                                                        | `Clock` port + `realClock`                                              |
-| `src/core/ports.ts`                                                        | `RtcFactory`, `KeyValueStore`, `AsyncKv`, `WakeLockPort`, `DevicePort`  |
-| `src/core/bytes.ts`                                                        | base64url, crc8, deflate/inflate helpers                                |
-| `src/core/sdpCodec.ts`                                                     | SDP ⇄ payload ⇄ wire string                                             |
-| `src/core/store.ts`                                                        | `loadState` / `saveState` with Zod + defaults                           |
-| `src/core/certStore.ts`                                                    | Persistent DTLS certificate via `AsyncKv`                               |
-| `src/core/heartbeat.ts`                                                    | `Heartbeat` timer/RTT/miss detection                                    |
-| `src/core/chunker.ts`                                                      | `chunkMessage` + `Reassembler`                                          |
-| `src/core/peerSession.ts`                                                  | The state machine around one PC + DC                                    |
-| `src/core/studentController.ts`                                            | One-session lifecycle, auto-restart, status, cmd                        |
-| `src/core/labController.ts`                                                | 30 sessions, roster, repair queue, settings                             |
-| `src/ui/platform/*.ts`                                                     | Browser adapters implementing the ports                                 |
-| `src/hooks/*.ts`                                                           | `useSessionView`, `useStudent`, `useLabRoster`                          |
-| `src/ui/shared/*`                                                          | `QrView`, `Scanner`, `StatusPill`, styles                               |
-| `src/ui/student/*`, `src/ui/teacher/*`, `src/ui/courier/*`, `src/ui/dev/*` | Route UIs                                                               |
-| `src/boot/*.ts`                                                            | Construct core objects outside React; register `window.__lab` test hook |
-| `src/main.tsx`                                                             | Pathname router                                                         |
-| `test/unit/**`                                                             | `node:test` suites + fakes                                              |
-| `test/e2e/**`                                                              | Playwright specs                                                        |
-| `test/fixtures/sdp/*.sdp`                                                  | Captured browser SDPs                                                   |
-| `.github/workflows/{ci,pages}.yml`                                         | CI and deploy                                                           |
+| Path | Responsibility |
+|---|---|
+| `src/schemas/ws.ts` | Workstation number schemas (number + URL-coercing) |
+| `src/schemas/sdpPayload.ts` | `SdpPayload` (rich) and `CompactPayload` (QR JSON) schemas |
+| `src/schemas/protocol.ts` | DataChannel message schemas, `LabMessageSchema`, reserved namespaces |
+| `src/schemas/storage.ts` | `StudentState`, `TeacherState`, settings schemas + storage keys |
+| `src/core/events.ts` | Tiny typed `Emitter` |
+| `src/core/clock.ts` | `Clock` port + `realClock` |
+| `src/core/ports.ts` | `RtcFactory`, `KeyValueStore`, `AsyncKv`, `WakeLockPort`, `DevicePort` |
+| `src/core/bytes.ts` | base64url, crc8, deflate/inflate helpers |
+| `src/core/sdpCodec.ts` | SDP ⇄ payload ⇄ wire string |
+| `src/core/store.ts` | `loadState` / `saveState` with Zod + defaults |
+| `src/core/certStore.ts` | Persistent DTLS certificate via `AsyncKv` |
+| `src/core/heartbeat.ts` | `Heartbeat` timer/RTT/miss detection |
+| `src/core/chunker.ts` | `chunkMessage` + `Reassembler` |
+| `src/core/peerSession.ts` | The state machine around one PC + DC |
+| `src/core/studentController.ts` | One-session lifecycle, auto-restart, status, cmd |
+| `src/core/labController.ts` | 30 sessions, roster, repair queue, settings |
+| `src/ui/platform/*.ts` | Browser adapters implementing the ports |
+| `src/hooks/*.ts` | `useSessionView`, `useStudent`, `useLabRoster` |
+| `src/ui/shared/*` | `QrView`, `Scanner`, `StatusPill`, styles |
+| `src/ui/student/*`, `src/ui/teacher/*`, `src/ui/courier/*`, `src/ui/dev/*` | Route UIs |
+| `src/boot/*.ts` | Construct core objects outside React; register `window.__lab` test hook |
+| `src/main.tsx` | Pathname router |
+| `test/unit/**` | `node:test` suites + fakes |
+| `test/e2e/**` | Playwright specs |
+| `test/fixtures/sdp/*.sdp` | Captured browser SDPs |
+| `.github/workflows/{ci,pages}.yml` | CI and deploy |
 
 ---
 
 ### Task 1: Scaffold + typed Emitter
 
 **Files:**
-
 - Create: `package.json`, `tsconfig.json`, `vite.config.ts`, `eslint.config.js`, `.prettierrc`, `.prettierignore`, `.gitignore`, `.nvmrc`, `index.html`, `src/main.tsx`, `src/core/events.ts`
 - Test: `test/unit/core/events.test.ts`
 
 **Interfaces:**
-
 - Produces: `class Emitter<E extends Record<string, unknown[]>>` with `on<K>(name: K, cb: (...args: E[K]) => void): () => void` and `protected emit<K>(name: K, ...args: E[K]): void`.
 
 - [ ] **Step 1: Write package.json**
@@ -144,7 +142,6 @@
 - [ ] **Step 3: Write vite.config.ts, eslint.config.js, .prettierrc, .prettierignore, .gitignore, .nvmrc**
 
 `vite.config.ts`:
-
 ```ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -160,7 +157,6 @@ export default defineConfig({
 ```
 
 `eslint.config.js`:
-
 ```js
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
@@ -188,24 +184,15 @@ export default tseslint.config(
         "error",
         {
           patterns: [
-            {
-              group: ["react", "react-dom", "react/*", "react-dom/*"],
-              message: "core is framework-free",
-            },
+            { group: ["react", "react-dom", "react/*", "react-dom/*"], message: "core is framework-free" },
             { group: ["**/ui/*", "**/hooks/*", "**/boot/*"], message: "core must not import UI" },
           ],
         },
       ],
       "no-restricted-globals": [
         "error",
-        "window",
-        "document",
-        "navigator",
-        "localStorage",
-        "sessionStorage",
-        "indexedDB",
-        "location",
-        "requestAnimationFrame",
+        "window", "document", "navigator", "localStorage", "sessionStorage",
+        "indexedDB", "location", "requestAnimationFrame",
       ],
     },
   },
@@ -213,13 +200,11 @@ export default tseslint.config(
 ```
 
 `.prettierrc`:
-
 ```json
 { "printWidth": 100, "singleQuote": false, "trailingComma": "all" }
 ```
 
 `.prettierignore`:
-
 ```
 dist
 node_modules
@@ -231,7 +216,6 @@ test/fixtures
 ```
 
 `.gitignore`:
-
 ```
 node_modules
 dist
@@ -241,7 +225,6 @@ test-results
 ```
 
 `.nvmrc`:
-
 ```
 22
 ```
@@ -249,7 +232,6 @@ test-results
 - [ ] **Step 4: Write index.html and a placeholder src/main.tsx**
 
 `index.html`:
-
 ```html
 <!doctype html>
 <html lang="en">
@@ -270,7 +252,6 @@ test-results
 ```
 
 `src/main.tsx` (placeholder, replaced in Task 9):
-
 ```tsx
 import { createRoot } from "react-dom/client";
 
@@ -278,7 +259,6 @@ createRoot(document.getElementById("root")!).render(<h1>Learning Lab</h1>);
 ```
 
 Add `declare const __APP_VERSION__: string;` in `src/vite-env.d.ts`:
-
 ```ts
 /// <reference types="vite/client" />
 declare const __APP_VERSION__: string;
@@ -292,7 +272,6 @@ Expected: lockfile created, no errors.
 - [ ] **Step 6: Write the failing Emitter test**
 
 `test/unit/core/events.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -300,20 +279,15 @@ import { Emitter } from "../../../src/core/events";
 
 type Ev = { ping: [number]; multi: [string, boolean] };
 class T extends Emitter<Ev> {
-  fire(n: number) {
-    this.emit("ping", n);
-  }
-  fireMulti() {
-    this.emit("multi", "a", true);
-  }
+  fire(n: number) { this.emit("ping", n); }
+  fireMulti() { this.emit("multi", "a", true); }
 }
 
 test("on receives emitted args", () => {
   const t = new T();
   const got: number[] = [];
   t.on("ping", (n) => got.push(n));
-  t.fire(1);
-  t.fire(2);
+  t.fire(1); t.fire(2);
   assert.deepEqual(got, [1, 2]);
 });
 
@@ -321,9 +295,7 @@ test("unsubscribe stops delivery", () => {
   const t = new T();
   const got: number[] = [];
   const off = t.on("ping", (n) => got.push(n));
-  t.fire(1);
-  off();
-  t.fire(2);
+  t.fire(1); off(); t.fire(2);
   assert.deepEqual(got, [1]);
 });
 
@@ -339,10 +311,7 @@ test("multiple args and listeners", () => {
 test("listener removed during emit does not break iteration", () => {
   const t = new T();
   let calls = 0;
-  const off = t.on("ping", () => {
-    calls++;
-    off();
-  });
+  const off = t.on("ping", () => { calls++; off(); });
   t.on("ping", () => calls++);
   t.fire(1);
   assert.equal(calls, 2);
@@ -357,7 +326,6 @@ Expected: FAIL — cannot find module `src/core/events`.
 - [ ] **Step 8: Implement Emitter**
 
 `src/core/events.ts`:
-
 ```ts
 export type EventMap = Record<string, unknown[]>;
 type Listener<A extends unknown[]> = (...args: A) => void;
@@ -398,18 +366,15 @@ git commit -m "chore: scaffold vite+react+ts, eslint core boundary, node:test; a
 ### Task 2: Zod schemas
 
 **Files:**
-
 - Create: `src/schemas/ws.ts`, `src/schemas/sdpPayload.ts`, `src/schemas/protocol.ts`, `src/schemas/storage.ts`
 - Test: `test/unit/schemas/protocol.test.ts`, `test/unit/schemas/storage.test.ts`, `test/unit/schemas/sdpPayload.test.ts`
 
 **Interfaces:**
-
 - Produces: `WsSchema`, `WsParamSchema`, `SdpPayloadSchema`/`SdpPayload`, `CompactPayloadSchema`/`CompactPayload`, `LabMessageSchema`/`LabMessage` and per-message types `HelloMessage`, `HbMessage`, `HbAckMessage`, `StatusMessage`, `CmdMessage`, `ChunkMessage`, `MAX_FRAME_BYTES = 16384`, `StudentStateSchema`/`StudentState`, `TeacherStateSchema`/`TeacherState`, `SettingsSchema`/`Settings`, `RosterEntrySchema`, `STUDENT_KEY`, `TEACHER_KEY`.
 
 - [ ] **Step 1: Write failing schema tests**
 
 `test/unit/schemas/protocol.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -437,8 +402,7 @@ test("rejects unknown t, bad ws, bad cmd, out-of-range battery", () => {
     { t: "chunk", id: "abc", i: -1, n: 2, data: "xx" },
     "not an object",
   ];
-  for (const m of bad)
-    assert.equal(LabMessageSchema.safeParse(m).success, false, JSON.stringify(m));
+  for (const m of bad) assert.equal(LabMessageSchema.safeParse(m).success, false, JSON.stringify(m));
 });
 
 test("frame limit is Safari's 16 KiB", () => {
@@ -447,16 +411,10 @@ test("frame limit is Safari's 16 KiB", () => {
 ```
 
 `test/unit/schemas/storage.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  StudentStateSchema,
-  TeacherStateSchema,
-  STUDENT_KEY,
-  TEACHER_KEY,
-} from "../../../src/schemas/storage";
+import { StudentStateSchema, TeacherStateSchema, STUDENT_KEY, TEACHER_KEY } from "../../../src/schemas/storage";
 
 test("student state defaults pairCount", () => {
   const s = StudentStateSchema.parse({ ws: 3 });
@@ -482,22 +440,14 @@ test("rejects ws out of range", () => {
 ```
 
 `test/unit/schemas/sdpPayload.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SdpPayloadSchema, CompactPayloadSchema } from "../../../src/schemas/sdpPayload";
 
 const base = {
-  v: 1,
-  role: "offer",
-  ws: 7,
-  mid: "0",
-  ufrag: "kJ3q",
-  pwd: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
-  fp: new Uint8Array(32),
-  setup: "actpass",
-  cands: [{ ip: "192.168.1.42", port: 54321, proto: "udp" }],
+  v: 1, role: "offer", ws: 7, mid: "0", ufrag: "kJ3q", pwd: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
+  fp: new Uint8Array(32), setup: "actpass", cands: [{ ip: "192.168.1.42", port: 54321, proto: "udp" }],
 };
 
 test("accepts a valid payload", () => {
@@ -510,17 +460,7 @@ test("rejects wrong fingerprint length and empty candidates", () => {
 });
 
 test("compact form requires 43-char base64url fingerprint", () => {
-  const c = {
-    v: 1,
-    r: "o",
-    w: 7,
-    m: "0",
-    u: "kJ3q",
-    p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
-    f: "A".repeat(43),
-    s: "actpass",
-    c: [["192.168.1.42", 54321]],
-  };
+  const c = { v: 1, r: "o", w: 7, m: "0", u: "kJ3q", p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul", f: "A".repeat(43), s: "actpass", c: [["192.168.1.42", 54321]] };
   assert.equal(CompactPayloadSchema.safeParse(c).success, true);
   assert.equal(CompactPayloadSchema.safeParse({ ...c, f: "A".repeat(42) }).success, false);
 });
@@ -534,7 +474,6 @@ Expected: FAIL — modules not found.
 - [ ] **Step 3: Implement schemas**
 
 `src/schemas/ws.ts`:
-
 ```ts
 import { z } from "zod";
 
@@ -547,7 +486,6 @@ export type Ws = z.infer<typeof WsSchema>;
 ```
 
 `src/schemas/sdpPayload.ts`:
-
 ```ts
 import { z } from "zod";
 import { WsSchema } from "./ws";
@@ -568,9 +506,7 @@ export const SdpPayloadSchema = z.object({
   mid: z.string().min(1).max(16),
   ufrag: z.string().min(4).max(256),
   pwd: z.string().min(22).max(256),
-  fp: z
-    .instanceof(Uint8Array)
-    .refine((b) => b.length === 32, "sha-256 fingerprint must be 32 bytes"),
+  fp: z.instanceof(Uint8Array).refine((b) => b.length === 32, "sha-256 fingerprint must be 32 bytes"),
   setup: SetupSchema,
   cands: z.array(CandidateSchema).min(1).max(8),
 });
@@ -586,16 +522,12 @@ export const CompactPayloadSchema = z.object({
   p: z.string().min(22).max(256),
   f: z.string().length(43),
   s: SetupSchema,
-  c: z
-    .array(z.tuple([z.string().min(2), z.number().int().min(1).max(65535)]))
-    .min(1)
-    .max(8),
+  c: z.array(z.tuple([z.string().min(2), z.number().int().min(1).max(65535)])).min(1).max(8),
 });
 export type CompactPayload = z.infer<typeof CompactPayloadSchema>;
 ```
 
 `src/schemas/protocol.ts`:
-
 ```ts
 import { z } from "zod";
 import { WsSchema } from "./ws";
@@ -610,16 +542,8 @@ export const HelloSchema = z.object({
   appVersion: z.string().min(1).max(64),
   ua: z.string().max(512),
 });
-export const HbSchema = z.object({
-  t: z.literal("hb"),
-  seq: z.number().int().nonnegative(),
-  ts: z.number(),
-});
-export const HbAckSchema = z.object({
-  t: z.literal("hb-ack"),
-  seq: z.number().int().nonnegative(),
-  ts: z.number(),
-});
+export const HbSchema = z.object({ t: z.literal("hb"), seq: z.number().int().nonnegative(), ts: z.number() });
+export const HbAckSchema = z.object({ t: z.literal("hb-ack"), seq: z.number().int().nonnegative(), ts: z.number() });
 export const StatusSchema = z.object({
   t: z.literal("status"),
   battery: z.number().min(0).max(1).optional(),
@@ -627,10 +551,7 @@ export const StatusSchema = z.object({
   visibility: z.enum(["visible", "hidden"]),
   wakeLock: z.boolean(),
 });
-export const CmdSchema = z.object({
-  t: z.literal("cmd"),
-  cmd: z.enum(["reload", "show-id", "ping"]),
-});
+export const CmdSchema = z.object({ t: z.literal("cmd"), cmd: z.enum(["reload", "show-id", "ping"]) });
 export const ChunkSchema = z.object({
   t: z.literal("chunk"),
   id: z.string().min(1).max(32),
@@ -640,12 +561,7 @@ export const ChunkSchema = z.object({
 });
 
 export const LabMessageSchema = z.discriminatedUnion("t", [
-  HelloSchema,
-  HbSchema,
-  HbAckSchema,
-  StatusSchema,
-  CmdSchema,
-  ChunkSchema,
+  HelloSchema, HbSchema, HbAckSchema, StatusSchema, CmdSchema, ChunkSchema,
 ]);
 
 export type HelloMessage = z.infer<typeof HelloSchema>;
@@ -664,7 +580,6 @@ export type LogMessage = never; // Phase 5
 ```
 
 `src/schemas/storage.ts`:
-
 ```ts
 import { z } from "zod";
 import { WsSchema } from "./ws";
@@ -722,13 +637,11 @@ git commit -m "feat(schemas): zod schemas for sdp payload, dc protocol, storage"
 ### Task 3: Byte helpers + SDP codec
 
 **Files:**
-
 - Create: `src/core/bytes.ts`, `src/core/sdpCodec.ts`, `test/fixtures/sdp/chrome-offer.sdp`, `test/fixtures/sdp/safari-answer.sdp`
 - Modify: `docs/superpowers/specs/2026-09-20-p2p-core-design.md` §3.1 (add `mid`)
 - Test: `test/unit/core/bytes.test.ts`, `test/unit/core/sdpCodec.test.ts`
 
 **Interfaces:**
-
 - Consumes: `SdpPayloadSchema`, `CompactPayloadSchema` from Task 2.
 - Produces: `toBase64Url(b: Uint8Array): string`, `fromBase64Url(s: string): Uint8Array`, `crc8(b: Uint8Array): number`, `deflateRaw(b): Promise<Uint8Array>`, `inflateRaw(b): Promise<Uint8Array>`; `extractPayload(sdp: string, role: "offer"|"answer", ws: number): SdpPayload`, `buildSdp(p: SdpPayload): string`, `encodeWire(p: SdpPayload): Promise<string>`, `decodeWire(wire: string): Promise<SdpPayload>`, `class CodecError extends Error`, `WIRE_PREFIX = "LAB1:"`.
 
@@ -739,7 +652,6 @@ In the spec's §3.1 payload block insert `mid: string,   // a=mid of the m=appli
 - [ ] **Step 2: Write fixtures**
 
 `test/fixtures/sdp/chrome-offer.sdp` (CRLF or LF both accepted by the parser):
-
 ```
 v=0
 o=- 4611731400430051336 2 IN IP4 127.0.0.1
@@ -765,7 +677,6 @@ a=max-message-size:262144
 ```
 
 `test/fixtures/sdp/safari-answer.sdp`:
-
 ```
 v=0
 o=- 8829356152651425622 2 IN IP4 127.0.0.1
@@ -789,7 +700,6 @@ a=max-message-size:65536
 - [ ] **Step 3: Write failing tests**
 
 `test/unit/core/bytes.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -826,28 +736,14 @@ test("deflate/inflate roundtrip and actually shrinks", async () => {
 ```
 
 `test/unit/core/sdpCodec.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
-  extractPayload,
-  buildSdp,
-  encodeWire,
-  decodeWire,
-  CodecError,
-  WIRE_PREFIX,
-} from "../../../src/core/sdpCodec";
+import { extractPayload, buildSdp, encodeWire, decodeWire, CodecError, WIRE_PREFIX } from "../../../src/core/sdpCodec";
 
-const chromeOffer = readFileSync(
-  new URL("../../fixtures/sdp/chrome-offer.sdp", import.meta.url),
-  "utf8",
-);
-const safariAnswer = readFileSync(
-  new URL("../../fixtures/sdp/safari-answer.sdp", import.meta.url),
-  "utf8",
-);
+const chromeOffer = readFileSync(new URL("../../fixtures/sdp/chrome-offer.sdp", import.meta.url), "utf8");
+const safariAnswer = readFileSync(new URL("../../fixtures/sdp/safari-answer.sdp", import.meta.url), "utf8");
 
 test("extracts ice/dtls and host candidates, dropping link-local and duplicates", () => {
   const p = extractPayload(chromeOffer, "offer", 7);
@@ -910,9 +806,7 @@ test("decodeWire rejects bad prefix, bad crc, garbage", async () => {
 });
 
 test("extractPayload throws on missing attributes", () => {
-  assert.throws(() =>
-    extractPayload("v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n", "offer", 1),
-  );
+  assert.throws(() => extractPayload("v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n", "offer", 1));
 });
 ```
 
@@ -1017,8 +911,7 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
     throw new CodecError("sdp missing ice-ufrag/ice-pwd/fingerprint/setup/mid");
   }
   const [alg, hex] = fpLine.trim().split(/\s+/);
-  if (alg?.toLowerCase() !== "sha-256" || !hex)
-    throw new CodecError("only sha-256 fingerprints are supported");
+  if (alg?.toLowerCase() !== "sha-256" || !hex) throw new CodecError("only sha-256 fingerprints are supported");
   const fp = new Uint8Array(hex.split(":").map((h) => parseInt(h, 16)));
 
   const cands: Candidate[] = [];
@@ -1038,9 +931,7 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
 
 export function buildSdp(p: SdpPayload): string {
   const payload = SdpPayloadSchema.parse(p);
-  const fpHex = Array.from(payload.fp, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join(
-    ":",
-  );
+  const fpHex = Array.from(payload.fp, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join(":");
   const cands = payload.cands.map(
     (c, i) => `a=candidate:${i + 1} 1 udp ${2122260223 - i} ${c.ip} ${c.port} typ host`,
   );
@@ -1125,8 +1016,7 @@ export async function decodeWire(wire: string): Promise<SdpPayload> {
     throw new CodecError("payload is not JSON");
   }
   const compact = CompactPayloadSchema.safeParse(parsed);
-  if (!compact.success)
-    throw new CodecError(`schema: ${compact.error.issues[0]?.message ?? "invalid"}`);
+  if (!compact.success) throw new CodecError(`schema: ${compact.error.issues[0]?.message ?? "invalid"}`);
   return fromCompact(compact.data);
 }
 ```
@@ -1148,12 +1038,10 @@ git commit -m "feat(core): sdp codec — extract, rebuild, LAB1 wire format with
 ### Task 4: Clock, ports, persistence, certificate store
 
 **Files:**
-
 - Create: `src/core/clock.ts`, `src/core/ports.ts`, `src/core/store.ts`, `src/core/certStore.ts`, `test/unit/helpers/fakeClock.ts`, `test/unit/helpers/memoryKv.ts`
 - Test: `test/unit/core/store.test.ts`, `test/unit/core/certStore.test.ts`, `test/unit/helpers/fakeClock.test.ts`
 
 **Interfaces:**
-
 - Produces:
   - `interface Clock { now(): number; setTimeout(fn: () => void, ms: number): TimerHandle; clearTimeout(h: TimerHandle): void; setInterval(fn: () => void, ms: number): TimerHandle; clearInterval(h: TimerHandle): void }`, `type TimerHandle = ReturnType<typeof globalThis.setTimeout>`, `realClock: Clock`.
   - `interface RtcFactory { create(config: RTCConfiguration): RTCPeerConnection }`
@@ -1168,7 +1056,6 @@ git commit -m "feat(core): sdp codec — extract, rebuild, LAB1 wire format with
 - [ ] **Step 1: Write failing tests**
 
 `test/unit/helpers/fakeClock.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1200,17 +1087,13 @@ test("intervals repeat and can be cleared", () => {
 test("timer scheduled from within a callback runs in the same advance", () => {
   const c = new FakeClock();
   const log: number[] = [];
-  c.setTimeout(() => {
-    log.push(c.now());
-    c.setTimeout(() => log.push(c.now()), 5);
-  }, 10);
+  c.setTimeout(() => { log.push(c.now()); c.setTimeout(() => log.push(c.now()), 5); }, 10);
   c.advance(20);
   assert.deepEqual(log, [10, 15]);
 });
 ```
 
 `test/unit/core/store.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1237,10 +1120,7 @@ test("corrupt JSON resets to fallback and logs", () => {
   const kv = new MemoryKv();
   kv.set("k", "{not json");
   const logs: string[] = [];
-  assert.deepEqual(
-    loadState(kv, "k", S, fallback, (m) => logs.push(m)),
-    { n: 1 },
-  );
+  assert.deepEqual(loadState(kv, "k", S, fallback, (m) => logs.push(m)), { n: 1 });
   assert.equal(kv.get("k"), JSON.stringify(fallback));
   assert.equal(logs.length, 1);
 });
@@ -1260,7 +1140,6 @@ test("saveState validates before writing", () => {
 ```
 
 `test/unit/core/certStore.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1290,12 +1169,8 @@ test("regenerates when stored cert is expired", async () => {
 
 test("regenerates when store throws", async () => {
   const kv: import("../../../src/core/ports").AsyncKv = {
-    get: async () => {
-      throw new Error("idb down");
-    },
-    set: async () => {
-      throw new Error("idb down");
-    },
+    get: async () => { throw new Error("idb down"); },
+    set: async () => { throw new Error("idb down"); },
   };
   let gen = 0;
   const c = await getOrCreateCertificate(kv, async () => fakeCert(++gen));
@@ -1312,7 +1187,6 @@ Expected: FAIL — modules not found.
 - [ ] **Step 3: Implement clock.ts and ports.ts**
 
 `src/core/clock.ts`:
-
 ```ts
 export type TimerHandle = ReturnType<typeof globalThis.setTimeout>;
 
@@ -1334,7 +1208,6 @@ export const realClock: Clock = {
 ```
 
 `src/core/ports.ts`:
-
 ```ts
 export interface RtcFactory {
   create(config: RTCConfiguration): RTCPeerConnection;
@@ -1368,7 +1241,6 @@ export interface DevicePort {
 - [ ] **Step 4: Implement store.ts and certStore.ts**
 
 `src/core/store.ts`:
-
 ```ts
 import type { z } from "zod";
 import type { KeyValueStore } from "./ports";
@@ -1404,19 +1276,14 @@ export function saveState<S extends z.ZodTypeAny>(
 ```
 
 `src/core/certStore.ts`:
-
 ```ts
 import type { AsyncKv } from "./ports";
 
 export const CERT_KEY = "lab.cert.v1";
 
 function isLiveCert(v: unknown): v is RTCCertificate {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    typeof (v as RTCCertificate).expires === "number" &&
-    (v as RTCCertificate).expires > Date.now() + 24 * 3600 * 1000
-  );
+  return typeof v === "object" && v !== null && typeof (v as RTCCertificate).expires === "number" &&
+    (v as RTCCertificate).expires > Date.now() + 24 * 3600 * 1000;
 }
 
 /** Stable DTLS certificate per device. Falls back to a fresh cert if storage misbehaves. */
@@ -1443,40 +1310,29 @@ export async function getOrCreateCertificate(
 - [ ] **Step 5: Implement test helpers**
 
 `test/unit/helpers/fakeClock.ts`:
-
 ```ts
 import type { Clock, TimerHandle } from "../../../src/core/clock";
 
-interface Entry {
-  at: number;
-  fn: () => void;
-  every?: number;
-}
+interface Entry { at: number; fn: () => void; every?: number }
 
 export class FakeClock implements Clock {
   private t = 0;
   private next = 1;
   private timers = new Map<number, Entry>();
 
-  now(): number {
-    return this.t;
-  }
+  now(): number { return this.t; }
   setTimeout(fn: () => void, ms: number): TimerHandle {
     const id = this.next++;
     this.timers.set(id, { at: this.t + ms, fn });
     return id as unknown as TimerHandle;
   }
-  clearTimeout(h: TimerHandle): void {
-    this.timers.delete(h as unknown as number);
-  }
+  clearTimeout(h: TimerHandle): void { this.timers.delete(h as unknown as number); }
   setInterval(fn: () => void, ms: number): TimerHandle {
     const id = this.next++;
     this.timers.set(id, { at: this.t + ms, fn, every: ms });
     return id as unknown as TimerHandle;
   }
-  clearInterval(h: TimerHandle): void {
-    this.clearTimeout(h);
-  }
+  clearInterval(h: TimerHandle): void { this.clearTimeout(h); }
 
   /** Advance virtual time, firing due timers in order (including ones scheduled meanwhile). */
   advance(ms: number): void {
@@ -1485,15 +1341,11 @@ export class FakeClock implements Clock {
       let dueId: number | undefined;
       let due: Entry | undefined;
       for (const [id, e] of this.timers) {
-        if (e.at <= end && (due === undefined || e.at < due.at)) {
-          dueId = id;
-          due = e;
-        }
+        if (e.at <= end && (due === undefined || e.at < due.at)) { dueId = id; due = e; }
       }
       if (due === undefined || dueId === undefined) break;
       this.t = due.at;
-      if (due.every !== undefined) due.at += due.every;
-      else this.timers.delete(dueId);
+      if (due.every !== undefined) due.at += due.every; else this.timers.delete(dueId);
       due.fn();
     }
     this.t = end;
@@ -1502,31 +1354,20 @@ export class FakeClock implements Clock {
 ```
 
 `test/unit/helpers/memoryKv.ts`:
-
 ```ts
 import type { AsyncKv, KeyValueStore } from "../../../src/core/ports";
 
 export class MemoryKv implements KeyValueStore {
   private m = new Map<string, string>();
-  get(key: string): string | null {
-    return this.m.get(key) ?? null;
-  }
-  set(key: string, value: string): void {
-    this.m.set(key, value);
-  }
-  remove(key: string): void {
-    this.m.delete(key);
-  }
+  get(key: string): string | null { return this.m.get(key) ?? null; }
+  set(key: string, value: string): void { this.m.set(key, value); }
+  remove(key: string): void { this.m.delete(key); }
 }
 
 export class MemoryAsyncKv implements AsyncKv {
   private m = new Map<string, unknown>();
-  async get(key: string): Promise<unknown> {
-    return this.m.get(key);
-  }
-  async set(key: string, value: unknown): Promise<void> {
-    this.m.set(key, value);
-  }
+  async get(key: string): Promise<unknown> { return this.m.get(key); }
+  async set(key: string, value: unknown): Promise<void> { this.m.set(key, value); }
 }
 ```
 
@@ -1547,12 +1388,10 @@ git commit -m "feat(core): clock/ports, zod-guarded persistence, certificate sto
 ### Task 5: Heartbeat + chunker
 
 **Files:**
-
 - Create: `src/core/heartbeat.ts`, `src/core/chunker.ts`
 - Test: `test/unit/core/heartbeat.test.ts`, `test/unit/core/chunker.test.ts`
 
 **Interfaces:**
-
 - Consumes: `Clock`, `HbMessage`, `HbAckMessage`, `ChunkMessage`, `MAX_FRAME_BYTES`.
 - Produces:
   - `interface HeartbeatOpts { clock: Clock; intervalMs: number; missMs: number; send(m: HbMessage | HbAckMessage): void; onMiss(): void; onRecover(): void; onRtt(ms: number): void }`
@@ -1563,7 +1402,6 @@ git commit -m "feat(core): clock/ports, zod-guarded persistence, certificate sto
 - [ ] **Step 1: Write failing tests**
 
 `test/unit/core/heartbeat.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1577,13 +1415,9 @@ function make() {
   const ev: string[] = [];
   const rtts: number[] = [];
   const hb = new Heartbeat({
-    clock,
-    intervalMs: 5000,
-    missMs: 15000,
+    clock, intervalMs: 5000, missMs: 15000,
     send: (m) => sent.push(m),
-    onMiss: () => ev.push("miss"),
-    onRecover: () => ev.push("recover"),
-    onRtt: (ms) => rtts.push(ms),
+    onMiss: () => ev.push("miss"), onRecover: () => ev.push("recover"), onRtt: (ms) => rtts.push(ms),
   });
   return { clock, sent, ev, rtts, hb };
 }
@@ -1592,14 +1426,8 @@ test("sends hb every interval with increasing seq", () => {
   const { clock, sent, hb } = make();
   hb.start();
   clock.advance(15000);
-  assert.deepEqual(
-    sent.map((m) => m.t),
-    ["hb", "hb", "hb"],
-  );
-  assert.deepEqual(
-    sent.map((m) => m.seq),
-    [0, 1, 2],
-  );
+  assert.deepEqual(sent.map((m) => m.t), ["hb", "hb", "hb"]);
+  assert.deepEqual(sent.map((m) => m.seq), [0, 1, 2]);
 });
 
 test("replies to hb with hb-ack echoing seq/ts", () => {
@@ -1641,7 +1469,6 @@ test("stop halts sending", () => {
 ```
 
 `test/unit/core/chunker.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1654,13 +1481,7 @@ test("small message passes through untouched", () => {
 });
 
 test("large message is split into valid chunk frames under the limit and reassembles", () => {
-  const big = JSON.stringify({
-    t: "hello",
-    role: "student",
-    ws: 1,
-    appVersion: "x",
-    ua: "é".repeat(40000),
-  });
+  const big = JSON.stringify({ t: "hello", role: "student", ws: 1, appVersion: "x", ua: "é".repeat(40000) });
   const frames = chunkMessage(big, MAX_FRAME_BYTES);
   assert.ok(frames.length > 1);
   const r = new Reassembler();
@@ -1776,11 +1597,7 @@ export function chunkMessage(json: string, maxBytes: number): string[] {
   );
 }
 
-interface Pending {
-  n: number;
-  parts: (string | undefined)[];
-  got: number;
-}
+interface Pending { n: number; parts: (string | undefined)[]; got: number }
 
 export class Reassembler {
   private pending = new Map<string, Pending>();
@@ -1819,12 +1636,10 @@ git commit -m "feat(core): heartbeat with rtt/miss detection; 16KiB chunker + re
 ### Task 6: PeerSession state machine
 
 **Files:**
-
 - Create: `src/core/peerSession.ts`, `test/unit/helpers/fakeRtc.ts`
 - Test: `test/unit/core/peerSession.test.ts`
 
 **Interfaces:**
-
 - Consumes: `Emitter`, `Clock`, `RtcFactory`, `extractPayload`, `buildSdp`, `Heartbeat`, `chunkMessage`, `Reassembler`, `LabMessageSchema`, `MAX_FRAME_BYTES`, `SdpPayload`.
 - Produces:
   - `type SessionState = "idle" | "gathering" | "awaiting-remote" | "connecting" | "connected" | "degraded" | "failed"`
@@ -1837,19 +1652,12 @@ git commit -m "feat(core): heartbeat with rtt/miss detection; 16KiB chunker + re
 - [ ] **Step 1: Write the fake RTC helper**
 
 `test/unit/helpers/fakeRtc.ts`:
-
 ```ts
 import { readFileSync } from "node:fs";
 import type { RtcFactory } from "../../../src/core/ports";
 
-export const CHROME_OFFER = readFileSync(
-  new URL("../../fixtures/sdp/chrome-offer.sdp", import.meta.url),
-  "utf8",
-);
-export const SAFARI_ANSWER = readFileSync(
-  new URL("../../fixtures/sdp/safari-answer.sdp", import.meta.url),
-  "utf8",
-);
+export const CHROME_OFFER = readFileSync(new URL("../../fixtures/sdp/chrome-offer.sdp", import.meta.url), "utf8");
+export const SAFARI_ANSWER = readFileSync(new URL("../../fixtures/sdp/safari-answer.sdp", import.meta.url), "utf8");
 
 export class FakeDataChannel {
   readyState: RTCDataChannelState = "connecting";
@@ -1867,17 +1675,10 @@ export class FakeDataChannel {
     this.readyState = "closed";
     this.onclose?.();
   }
-  open(): void {
-    this.readyState = "open";
-    this.onopen?.();
-  }
-  receive(s: string): void {
-    this.onmessage?.({ data: s });
-  }
+  open(): void { this.readyState = "open"; this.onopen?.(); }
+  receive(s: string): void { this.onmessage?.({ data: s }); }
   /** Parsed JSON of everything sent. */
-  sentJson(): unknown[] {
-    return this.sent.map((s) => JSON.parse(s) as unknown);
-  }
+  sentJson(): unknown[] { return this.sent.map((s) => JSON.parse(s) as unknown); }
 }
 
 export class FakeRTCPeerConnection {
@@ -1896,29 +1697,13 @@ export class FakeRTCPeerConnection {
     this.channels.push(dc);
     return dc;
   }
-  async createOffer(): Promise<RTCSessionDescriptionInit> {
-    return { type: "offer", sdp: CHROME_OFFER };
-  }
-  async createAnswer(): Promise<RTCSessionDescriptionInit> {
-    return { type: "answer", sdp: SAFARI_ANSWER };
-  }
-  async setLocalDescription(d: RTCSessionDescriptionInit): Promise<void> {
-    this.localDescription = d;
-  }
-  async setRemoteDescription(d: RTCSessionDescriptionInit): Promise<void> {
-    this.remoteDescription = d;
-  }
-  close(): void {
-    this.closed = true;
-  }
-  completeGathering(): void {
-    this.iceGatheringState = "complete";
-    this.onicegatheringstatechange?.();
-  }
-  setIce(s: RTCIceConnectionState): void {
-    this.iceConnectionState = s;
-    this.oniceconnectionstatechange?.();
-  }
+  async createOffer(): Promise<RTCSessionDescriptionInit> { return { type: "offer", sdp: CHROME_OFFER }; }
+  async createAnswer(): Promise<RTCSessionDescriptionInit> { return { type: "answer", sdp: SAFARI_ANSWER }; }
+  async setLocalDescription(d: RTCSessionDescriptionInit): Promise<void> { this.localDescription = d; }
+  async setRemoteDescription(d: RTCSessionDescriptionInit): Promise<void> { this.remoteDescription = d; }
+  close(): void { this.closed = true; }
+  completeGathering(): void { this.iceGatheringState = "complete"; this.onicegatheringstatechange?.(); }
+  setIce(s: RTCIceConnectionState): void { this.iceConnectionState = s; this.oniceconnectionstatechange?.(); }
   incomingChannel(): FakeDataChannel {
     const dc = new FakeDataChannel("lab");
     this.channels.push(dc);
@@ -1948,7 +1733,6 @@ export const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 - [ ] **Step 2: Write failing PeerSession tests**
 
 `test/unit/core/peerSession.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -1957,28 +1741,14 @@ import { extractPayload } from "../../../src/core/sdpCodec";
 import { FakeClock } from "../helpers/fakeClock";
 import { FakeRtcFactory, CHROME_OFFER, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
 
-const TIMERS = {
-  heartbeatMs: 5000,
-  degradedMs: 15000,
-  failedMs: 60000,
-  connectMs: 20000,
-  gatherMs: 3000,
-};
+const TIMERS = { heartbeatMs: 5000, degradedMs: 15000, failedMs: 60000, connectMs: 20000, gatherMs: 3000 };
 const offerPayload = extractPayload(CHROME_OFFER, "offer", 7);
 const answerPayload = extractPayload(SAFARI_ANSWER, "answer", 7);
 
 function student() {
   const rtc = new FakeRtcFactory();
   const clock = new FakeClock();
-  const s = new PeerSession({
-    role: "student",
-    ws: 7,
-    rtc,
-    clock,
-    timers: TIMERS,
-    appVersion: "t1",
-    ua: "test",
-  });
+  const s = new PeerSession({ role: "student", ws: 7, rtc, clock, timers: TIMERS, appVersion: "t1", ua: "test" });
   const states: SessionState[] = [];
   s.on("state", (st) => states.push(st));
   return { rtc, clock, s, states };
@@ -2148,15 +1918,7 @@ test("close() tears down silently: state failed, no needsRepair", async () => {
 test("teacher: applyRemote(offer) from idle → gathering → localPayload(answer) → connecting → connected", async () => {
   const rtc = new FakeRtcFactory();
   const clock = new FakeClock();
-  const t = new PeerSession({
-    role: "teacher",
-    ws: 7,
-    rtc,
-    clock,
-    timers: TIMERS,
-    appVersion: "t1",
-    ua: "mac",
-  });
+  const t = new PeerSession({ role: "teacher", ws: 7, rtc, clock, timers: TIMERS, appVersion: "t1", ua: "mac" });
   const states: SessionState[] = [];
   t.on("state", (st) => states.push(st));
   let local: { role: string } | undefined;
@@ -2176,29 +1938,14 @@ test("teacher: applyRemote(offer) from idle → gathering → localPayload(answe
 });
 
 test("teacher: start() is rejected", async () => {
-  const t = new PeerSession({
-    role: "teacher",
-    ws: 1,
-    rtc: new FakeRtcFactory(),
-    clock: new FakeClock(),
-    appVersion: "t",
-    ua: "u",
-  });
+  const t = new PeerSession({ role: "teacher", ws: 1, rtc: new FakeRtcFactory(), clock: new FakeClock(), appVersion: "t", ua: "u" });
   await assert.rejects(t.start());
 });
 
 test("passes certificates into the pc config", async () => {
   const rtc = new FakeRtcFactory();
   const cert = { expires: 1 } as unknown as RTCCertificate;
-  const s = new PeerSession({
-    role: "student",
-    ws: 1,
-    rtc,
-    clock: new FakeClock(),
-    certificates: [cert],
-    appVersion: "t",
-    ua: "u",
-  });
+  const s = new PeerSession({ role: "student", ws: 1, rtc, clock: new FakeClock(), certificates: [cert], appVersion: "t", ua: "u" });
   const p = s.start();
   await flush();
   assert.deepEqual(rtc.last().config.certificates, [cert]);
@@ -2226,7 +1973,7 @@ import type { RtcFactory } from "./ports";
 import { buildSdp, extractPayload } from "./sdpCodec";
 
 export type SessionState =
-  "idle" | "gathering" | "awaiting-remote" | "connecting" | "connected" | "degraded" | "failed";
+  | "idle" | "gathering" | "awaiting-remote" | "connecting" | "connected" | "degraded" | "failed";
 
 export interface SessionTimers {
   heartbeatMs: number;
@@ -2237,11 +1984,7 @@ export interface SessionTimers {
 }
 
 export const DEFAULT_TIMERS: SessionTimers = {
-  heartbeatMs: 5000,
-  degradedMs: 15000,
-  failedMs: 60000,
-  connectMs: 20000,
-  gatherMs: 3000,
+  heartbeatMs: 5000, degradedMs: 15000, failedMs: 60000, connectMs: 20000, gatherMs: 3000,
 };
 
 export interface PeerSessionOpts {
@@ -2396,13 +2139,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       },
     });
     this.hb.start();
-    this.send({
-      t: "hello",
-      role: this.role,
-      ws: this.ws,
-      appVersion: this.opts.appVersion,
-      ua: this.opts.ua,
-    });
+    this.send({ t: "hello", role: this.role, ws: this.ws, appVersion: this.opts.appVersion, ua: this.opts.ua });
   }
 
   /** Inbound boundary: JSON → Zod → route. Never throws. */
@@ -2464,10 +2201,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   }
 
   private armConnectTimer(): void {
-    this.connectTimer = this.opts.clock.setTimeout(
-      () => this.fail("connect timeout"),
-      this.timers.connectMs,
-    );
+    this.connectTimer = this.opts.clock.setTimeout(() => this.fail("connect timeout"), this.timers.connectMs);
   }
 
   private clearConnectTimer(): void {
@@ -2492,21 +2226,13 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       this.dc.onclose = null;
       this.dc.onmessage = null;
       this.dc.onopen = null;
-      try {
-        this.dc.close();
-      } catch {
-        /* already closed */
-      }
+      try { this.dc.close(); } catch { /* already closed */ }
     }
     if (this.pc) {
       this.pc.oniceconnectionstatechange = null;
       this.pc.onicegatheringstatechange = null;
       this.pc.ondatachannel = null;
-      try {
-        this.pc.close();
-      } catch {
-        /* already closed */
-      }
+      try { this.pc.close(); } catch { /* already closed */ }
     }
   }
 
@@ -2536,12 +2262,10 @@ git commit -m "feat(core): PeerSession state machine with heartbeat, degraded/fa
 ### Task 7: Student and Lab controllers
 
 **Files:**
-
 - Create: `src/core/studentController.ts`, `src/core/labController.ts`, `test/unit/helpers/fakeDevice.ts`
 - Test: `test/unit/core/studentController.test.ts`, `test/unit/core/labController.test.ts`
 
 **Interfaces:**
-
 - Consumes: `PeerSession`, `SessionTimers`, `loadState`/`saveState`, `StudentStateSchema`, `TeacherStateSchema`, `STUDENT_KEY`, `TEACHER_KEY`, ports.
 - Produces:
   - `interface StudentEnv { rtc: RtcFactory; clock: Clock; kv: KeyValueStore; wakeLock: WakeLockPort; device: DevicePort; reload(): void; appVersion: string; ua: string; certificates?: RTCCertificate[]; timers?: Partial<SessionTimers>; restartDelayMs?: number; log?(m: string): void }`
@@ -2556,7 +2280,6 @@ git commit -m "feat(core): PeerSession state machine with heartbeat, degraded/fa
 - [ ] **Step 1: Write the device fakes**
 
 `test/unit/helpers/fakeDevice.ts`:
-
 ```ts
 import type { DevicePort, Visibility, WakeLockPort } from "../../../src/core/ports";
 
@@ -2564,16 +2287,12 @@ export class FakeDevice implements DevicePort {
   vis: Visibility = "visible";
   batteryInfo: { level: number; charging: boolean } | undefined = { level: 0.8, charging: true };
   private subs = new Set<(v: Visibility) => void>();
-  visibility(): Visibility {
-    return this.vis;
-  }
+  visibility(): Visibility { return this.vis; }
   onVisibility(cb: (v: Visibility) => void): () => void {
     this.subs.add(cb);
     return () => this.subs.delete(cb);
   }
-  async battery() {
-    return this.batteryInfo;
-  }
+  async battery() { return this.batteryInfo; }
   setVisibility(v: Visibility): void {
     this.vis = v;
     for (const cb of this.subs) cb(v);
@@ -2593,7 +2312,6 @@ export class FakeWakeLock implements WakeLockPort {
 - [ ] **Step 2: Write failing StudentController tests**
 
 `test/unit/core/studentController.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -2615,17 +2333,7 @@ function make(ws = 7) {
   const wakeLock = new FakeWakeLock();
   let reloads = 0;
   const c = new StudentController(
-    {
-      rtc,
-      clock,
-      kv,
-      device,
-      wakeLock,
-      reload: () => reloads++,
-      appVersion: "v1",
-      ua: "ipad",
-      restartDelayMs: 500,
-    },
+    { rtc, clock, kv, device, wakeLock, reload: () => reloads++, appVersion: "v1", ua: "ipad", restartDelayMs: 500 },
     ws,
   );
   return { rtc, clock, kv, device, wakeLock, c, reloads: () => reloads };
@@ -2663,23 +2371,11 @@ test("start spawns a session, requests wake lock, emits session", async () => {
 test("connected → pairCount++, lastConnectedAt saved, status sent", async () => {
   const ctx = make();
   const dc = await bringUp(ctx);
-  const saved = JSON.parse(ctx.kv.get(STUDENT_KEY)!) as {
-    pairCount: number;
-    lastConnectedAt?: number;
-  };
+  const saved = JSON.parse(ctx.kv.get(STUDENT_KEY)!) as { pairCount: number; lastConnectedAt?: number };
   assert.equal(saved.pairCount, 1);
   assert.equal(typeof saved.lastConnectedAt, "number");
-  const status = dc.sentJson().find((m) => (m as { t: string }).t === "status") as Record<
-    string,
-    unknown
-  >;
-  assert.deepEqual(status, {
-    t: "status",
-    battery: 0.8,
-    charging: true,
-    visibility: "visible",
-    wakeLock: true,
-  });
+  const status = dc.sentJson().find((m) => (m as { t: string }).t === "status") as Record<string, unknown>;
+  assert.deepEqual(status, { t: "status", battery: 0.8, charging: true, visibility: "visible", wakeLock: true });
 });
 
 test("hello from teacher records teacherAppVersion", async () => {
@@ -2746,7 +2442,6 @@ test("stop closes the session and does not respawn", async () => {
 - [ ] **Step 3: Write failing LabController tests**
 
 `test/unit/core/labController.test.ts`:
-
 ```ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -2782,10 +2477,7 @@ test("fresh lab: 30 tiles never, repair queue is 1..30", () => {
   const snap = lab.snapshot();
   assert.equal(snap.length, 30);
   assert.ok(snap.every((t) => t.state === "never"));
-  assert.deepEqual(
-    lab.repairQueue(),
-    Array.from({ length: 30 }, (_, i) => i + 1),
-  );
+  assert.deepEqual(lab.repairQueue(), Array.from({ length: 30 }, (_, i) => i + 1));
 });
 
 test("acceptOffer resolves with an answer payload for the same ws", async () => {
@@ -2803,12 +2495,8 @@ test("change event fires on state transitions and roster is persisted", async ()
   ctx.lab.on("change", () => changes++);
   const { dc } = await pair(ctx, 3);
   assert.ok(changes >= 2);
-  dc.receive(
-    JSON.stringify({ t: "hello", role: "student", ws: 3, appVersion: "v1", ua: "iPad Safari" }),
-  );
-  const saved = JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
-    roster: Record<string, { pairCount: number; lastSeenUa?: string }>;
-  };
+  dc.receive(JSON.stringify({ t: "hello", role: "student", ws: 3, appVersion: "v1", ua: "iPad Safari" }));
+  const saved = JSON.parse(ctx.kv.get(TEACHER_KEY)!) as { roster: Record<string, { pairCount: number; lastSeenUa?: string }> };
   assert.equal(saved.roster["3"]?.pairCount, 1);
   assert.equal(saved.roster["3"]?.lastSeenUa, "iPad Safari");
 });
@@ -2816,15 +2504,7 @@ test("change event fires on state transitions and roster is persisted", async ()
 test("status messages populate the tile; version mismatch flagged", async () => {
   const ctx = make();
   const { dc } = await pair(ctx, 5);
-  dc.receive(
-    JSON.stringify({
-      t: "status",
-      battery: 0.4,
-      charging: false,
-      visibility: "hidden",
-      wakeLock: false,
-    }),
-  );
+  dc.receive(JSON.stringify({ t: "status", battery: 0.4, charging: false, visibility: "hidden", wakeLock: false }));
   dc.receive(JSON.stringify({ t: "hello", role: "student", ws: 5, appVersion: "v0", ua: "x" }));
   const tile = ctx.lab.snapshot()[4]!;
   assert.equal(tile.battery, 0.4);
@@ -2943,20 +2623,11 @@ export class StudentController extends Emitter<StudentEvents> {
     }
   }
 
-  constructor(
-    private readonly env: StudentEnv,
-    ws: number,
-  ) {
+  constructor(private readonly env: StudentEnv, ws: number) {
     super();
     this.ws = ws;
     const log = env.log ?? (() => {});
-    const loaded = loadState(
-      env.kv,
-      STUDENT_KEY,
-      StudentStateSchema,
-      StudentStateSchema.parse({ ws }),
-      log,
-    );
+    const loaded = loadState(env.kv, STUDENT_KEY, StudentStateSchema, StudentStateSchema.parse({ ws }), log);
     this.state = { ...loaded, ws };
     this.persist();
   }
@@ -2980,7 +2651,7 @@ export class StudentController extends Emitter<StudentEvents> {
 
   async pushStatus(): Promise<void> {
     const s = this.session;
-    if (!s || (s.state !== "connected" && s.state !== "degraded")) return;
+    if (!s || s.state !== "connected" && s.state !== "degraded") return;
     const b = await this.env.device.battery();
     s.send({
       t: "status",
@@ -3110,13 +2781,7 @@ export class LabController extends Emitter<LabEvents> {
 
   constructor(private readonly env: TeacherEnv) {
     super();
-    this.state = loadState(
-      env.kv,
-      TEACHER_KEY,
-      TeacherStateSchema,
-      TeacherStateSchema.parse({}),
-      env.log,
-    );
+    this.state = loadState(env.kv, TEACHER_KEY, TeacherStateSchema, TeacherStateSchema.parse({}), env.log);
   }
 
   get settings(): Settings {
@@ -3187,8 +2852,7 @@ export class LabController extends Emitter<LabEvents> {
       const view: RosterView = {
         ws,
         state: s?.state ?? "never",
-        versionMismatch:
-          l?.remoteAppVersion !== undefined && l.remoteAppVersion !== this.env.appVersion,
+        versionMismatch: l?.remoteAppVersion !== undefined && l.remoteAppVersion !== this.env.appVersion,
         history: l?.history ?? [],
       };
       if (s?.lastRtt !== undefined) view.rtt = s.lastRtt;
@@ -3287,11 +2951,9 @@ git commit -m "feat(core): StudentController (auto-restart, status, cmd) and Lab
 ### Task 8: Browser platform adapters, hooks, shared UI
 
 **Files:**
-
 - Create: `src/ui/platform/browserRtc.ts`, `src/ui/platform/browserKv.ts`, `src/ui/platform/browserWakeLock.ts`, `src/ui/platform/browserDevice.ts`, `src/ui/platform/idbKv.ts`, `src/ui/platform/cert.ts`, `src/ui/platform/camera.ts`, `src/ui/platform/appVersion.ts`, `src/ui/platform/barcodeDetector.d.ts`, `src/hooks/useSessionView.ts`, `src/hooks/useLabRoster.ts`, `src/hooks/useStudent.ts`, `src/hooks/usePromise.ts`, `src/ui/shared/QrView.tsx`, `src/ui/shared/Scanner.tsx`, `src/ui/shared/StatusPill.tsx`, `src/ui/shared/styles.css`
 
 **Interfaces:**
-
 - Consumes: ports from Task 4, `PeerSession`, `StudentController`, `LabController`, `encodeWire`/`decodeWire`.
 - Produces:
   - `browserRtc: RtcFactory`, `browserKv: KeyValueStore`, `browserWakeLock: WakeLockPort`, `browserDevice: DevicePort`, `idbKv: AsyncKv`, `loadCertificate(): Promise<RTCCertificate[] | undefined>`, `primeCameraPermission(): Promise<boolean>`, `APP_VERSION: string`.
@@ -3306,44 +2968,23 @@ git commit -m "feat(core): StudentController (auto-restart, status, cmd) and Lab
 - [ ] **Step 1: Platform adapters**
 
 `src/ui/platform/browserRtc.ts`:
-
 ```ts
 import type { RtcFactory } from "../../core/ports";
 export const browserRtc: RtcFactory = { create: (config) => new RTCPeerConnection(config) };
 ```
 
 `src/ui/platform/browserKv.ts`:
-
 ```ts
 import type { KeyValueStore } from "../../core/ports";
 /** localStorage can throw (private mode, quota, ITP). Every call is guarded. */
 export const browserKv: KeyValueStore = {
-  get(key) {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
-  set(key, value) {
-    try {
-      localStorage.setItem(key, value);
-    } catch {
-      /* ignore */
-    }
-  },
-  remove(key) {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      /* ignore */
-    }
-  },
+  get(key) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* ignore */ } },
+  remove(key) { try { localStorage.removeItem(key); } catch { /* ignore */ } },
 };
 ```
 
 `src/ui/platform/browserWakeLock.ts`:
-
 ```ts
 import type { WakeLockPort } from "../../core/ports";
 let sentinel: WakeLockSentinel | null = null;
@@ -3353,25 +2994,17 @@ export const browserWakeLock: WakeLockPort = {
     try {
       if (sentinel && !sentinel.released) return true;
       sentinel = await navigator.wakeLock.request("screen");
-      sentinel.addEventListener("release", () => {
-        sentinel = null;
-      });
+      sentinel.addEventListener("release", () => { sentinel = null; });
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   },
 };
 ```
 
 `src/ui/platform/browserDevice.ts`:
-
 ```ts
 import type { DevicePort, Visibility } from "../../core/ports";
-interface BatteryLike {
-  level: number;
-  charging: boolean;
-}
+interface BatteryLike { level: number; charging: boolean }
 type NavWithBattery = Navigator & { getBattery?: () => Promise<BatteryLike> };
 export const browserDevice: DevicePort = {
   visibility: (): Visibility => (document.visibilityState === "visible" ? "visible" : "hidden"),
@@ -3383,22 +3016,15 @@ export const browserDevice: DevicePort = {
   async battery() {
     const nav = navigator as NavWithBattery;
     if (!nav.getBattery) return undefined; // Safari has no Battery API; that's fine
-    try {
-      const b = await nav.getBattery();
-      return { level: b.level, charging: b.charging };
-    } catch {
-      return undefined;
-    }
+    try { const b = await nav.getBattery(); return { level: b.level, charging: b.charging }; } catch { return undefined; }
   },
 };
 ```
 
 `src/ui/platform/idbKv.ts`:
-
 ```ts
 import type { AsyncKv } from "../../core/ports";
-const DB = "lab",
-  STORE = "kv";
+const DB = "lab", STORE = "kv";
 function openDb(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
     const req = indexedDB.open(DB, 1);
@@ -3408,14 +3034,11 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((res, rej) => {
-        const r = fn(db.transaction(STORE, mode).objectStore(STORE));
-        r.onsuccess = () => res(r.result);
-        r.onerror = () => rej(r.error);
-      }),
-  );
+  return openDb().then((db) => new Promise<T>((res, rej) => {
+    const r = fn(db.transaction(STORE, mode).objectStore(STORE));
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
 }
 export const idbKv: AsyncKv = {
   get: (key) => tx("readonly", (s) => s.get(key) as IDBRequest<unknown>),
@@ -3424,29 +3047,21 @@ export const idbKv: AsyncKv = {
 ```
 
 `src/ui/platform/cert.ts`:
-
 ```ts
 import { getOrCreateCertificate } from "../../core/certStore";
 import { idbKv } from "./idbKv";
 export async function loadCertificate(): Promise<RTCCertificate[] | undefined> {
-  if (typeof RTCPeerConnection === "undefined" || !RTCPeerConnection.generateCertificate)
-    return undefined;
+  if (typeof RTCPeerConnection === "undefined" || !RTCPeerConnection.generateCertificate) return undefined;
   try {
     const cert = await getOrCreateCertificate(idbKv, () =>
-      RTCPeerConnection.generateCertificate({
-        name: "ECDSA",
-        namedCurve: "P-256",
-      } as EcKeyGenParams),
+      RTCPeerConnection.generateCertificate({ name: "ECDSA", namedCurve: "P-256" } as EcKeyGenParams),
     );
     return [cert];
-  } catch {
-    return undefined;
-  }
+  } catch { return undefined; }
 }
 ```
 
 `src/ui/platform/camera.ts`:
-
 ```ts
 /** Obtain camera permission so WebRTC emits real host IPs instead of mDNS names. Stream is stopped at once. */
 export async function primeCameraPermission(): Promise<boolean> {
@@ -3454,25 +3069,18 @@ export async function primeCameraPermission(): Promise<boolean> {
     const s = await navigator.mediaDevices.getUserMedia({ video: true });
     s.getTracks().forEach((t) => t.stop());
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 ```
 
 `src/ui/platform/appVersion.ts`:
-
 ```ts
 export const APP_VERSION: string = __APP_VERSION__;
 ```
 
 `src/ui/platform/barcodeDetector.d.ts`:
-
 ```ts
-interface DetectedBarcode {
-  rawValue: string;
-  format: string;
-}
+interface DetectedBarcode { rawValue: string; format: string }
 declare class BarcodeDetector {
   constructor(opts?: { formats?: string[] });
   detect(source: ImageBitmapSource): Promise<DetectedBarcode[]>;
@@ -3482,27 +3090,20 @@ declare class BarcodeDetector {
 - [ ] **Step 2: Hooks**
 
 `src/hooks/usePromise.ts`:
-
 ```ts
 import { useEffect, useState } from "react";
 export function usePromise<T>(p: Promise<T>): { value?: T; error?: Error } {
   const [r, setR] = useState<{ value?: T; error?: Error }>({});
   useEffect(() => {
     let live = true;
-    p.then(
-      (value) => live && setR({ value }),
-      (e: unknown) => live && setR({ error: e as Error }),
-    );
-    return () => {
-      live = false;
-    };
+    p.then((value) => live && setR({ value }), (e: unknown) => live && setR({ error: e as Error }));
+    return () => { live = false; };
   }, [p]);
   return r;
 }
 ```
 
 `src/hooks/useSessionView.ts`:
-
 ```ts
 import { useEffect, useState } from "react";
 import type { PeerSession, SessionState } from "../core/peerSession";
@@ -3518,21 +3119,13 @@ export interface SessionView {
 export function useSessionView(session: PeerSession | null): SessionView {
   const [view, setView] = useState<SessionView>({ state: session?.state ?? "none" });
   useEffect(() => {
-    if (!session) {
-      setView({ state: "none" });
-      return;
-    }
-    setView({
-      state: session.state,
-      ...(session.lastRtt !== undefined ? { rtt: session.lastRtt } : {}),
-    });
+    if (!session) { setView({ state: "none" }); return; }
+    setView({ state: session.state, ...(session.lastRtt !== undefined ? { rtt: session.lastRtt } : {}) });
     const offs = [
       session.on("state", (s) => setView((v) => ({ ...v, state: s }))),
       session.on("rtt", (rtt) => setView((v) => ({ ...v, rtt }))),
       session.on("localPayload", (p) => {
-        void encodeWire(p).then((localWire) =>
-          setView((v) => ({ ...v, localWire, localRole: p.role })),
-        );
+        void encodeWire(p).then((localWire) => setView((v) => ({ ...v, localWire, localRole: p.role })));
       }),
     ];
     return () => offs.forEach((off) => off());
@@ -3542,7 +3135,6 @@ export function useSessionView(session: PeerSession | null): SessionView {
 ```
 
 `src/hooks/useStudent.ts`:
-
 ```ts
 import { useEffect, useState } from "react";
 import type { PeerSession } from "../core/peerSession";
@@ -3567,18 +3159,12 @@ export function useStudent(c: StudentController) {
 ```
 
 `src/hooks/useLabRoster.ts`:
-
 ```ts
 import { useEffect, useState } from "react";
 import type { LabController } from "../core/labController";
 
 function read(lab: LabController) {
-  return {
-    tiles: lab.snapshot(),
-    queue: lab.repairQueue(),
-    counts: lab.counts(),
-    settings: lab.settings,
-  };
+  return { tiles: lab.snapshot(), queue: lab.repairQueue(), counts: lab.counts(), settings: lab.settings };
 }
 
 export function useLabRoster(lab: LabController) {
@@ -3594,55 +3180,26 @@ export function useLabRoster(lab: LabController) {
 - [ ] **Step 3: Shared UI**
 
 `src/ui/shared/QrView.tsx`:
-
 ```tsx
 import { useEffect, useRef } from "react";
 import QRCode from "qrcode";
 
-export function QrView({
-  wire,
-  role,
-  ws,
-  size = 480,
-}: {
-  wire: string;
-  role: "offer" | "answer";
-  ws: number;
-  size?: number;
-}) {
+export function QrView({ wire, role, ws, size = 480 }: { wire: string; role: "offer" | "answer"; ws: number; size?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (!ref.current) return;
     void QRCode.toCanvas(ref.current, wire, { errorCorrectionLevel: "M", width: size, margin: 2 });
   }, [wire, size]);
-  return (
-    <canvas
-      ref={ref}
-      className="qr"
-      data-payload={wire}
-      data-role={role}
-      data-ws={ws}
-      aria-label={`${role} code for workstation ${ws}`}
-    />
-  );
+  return <canvas ref={ref} className="qr" data-payload={wire} data-role={role} data-ws={ws} aria-label={`${role} code for workstation ${ws}`} />;
 }
 ```
 
 `src/ui/shared/Scanner.tsx`:
-
 ```tsx
 import { useEffect, useRef } from "react";
 import jsQR from "jsqr";
 
-export function Scanner({
-  onWire,
-  deviceId,
-  onError,
-}: {
-  onWire: (wire: string) => void;
-  deviceId?: string;
-  onError?: (e: Error) => void;
-}) {
+export function Scanner({ onWire, deviceId, onError }: { onWire: (wire: string) => void; deviceId?: string; onError?: (e: Error) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const video = videoRef.current;
@@ -3653,8 +3210,7 @@ export function Scanner({
     let last = "";
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const detector =
-      typeof BarcodeDetector !== "undefined" ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
+    const detector = typeof BarcodeDetector !== "undefined" ? new BarcodeDetector({ formats: ["qr_code"] }) : null;
 
     const loop = async () => {
       if (stop) return;
@@ -3664,19 +3220,13 @@ export function Scanner({
           if (detector) {
             text = (await detector.detect(video))[0]?.rawValue;
           } else if (ctx) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0);
             const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
             text = jsQR(img.data, img.width, img.height)?.data;
           }
-        } catch {
-          /* a bad frame is not an error */
-        }
-        if (text && text !== last) {
-          last = text;
-          onWire(text);
-        }
+        } catch { /* a bad frame is not an error */ }
+        if (text && text !== last) { last = text; onWire(text); }
       }
       raf = requestAnimationFrame(() => void loop());
     };
@@ -3701,214 +3251,44 @@ export function Scanner({
 ```
 
 `src/ui/shared/StatusPill.tsx`:
-
 ```tsx
 import type { SessionState } from "../../core/peerSession";
 export type PillState = SessionState | "never" | "none";
 const LABEL: Record<PillState, string> = {
-  idle: "Starting",
-  gathering: "Starting",
-  "awaiting-remote": "Waiting for teacher",
-  connecting: "Connecting",
-  connected: "Connected",
-  degraded: "Unstable",
-  failed: "Re-pair needed",
-  never: "Not paired",
-  none: "—",
+  idle: "Starting", gathering: "Starting", "awaiting-remote": "Waiting for teacher", connecting: "Connecting",
+  connected: "Connected", degraded: "Unstable", failed: "Re-pair needed", never: "Not paired", none: "—",
 };
 export function StatusPill({ state }: { state: PillState }) {
-  return (
-    <span className={`pill pill-${state}`} data-state={state}>
-      {LABEL[state]}
-    </span>
-  );
+  return <span className={`pill pill-${state}`} data-state={state}>{LABEL[state]}</span>;
 }
 ```
 
 `src/ui/shared/styles.css`:
-
 ```css
-:root {
-  color-scheme: dark;
-  --bg: #111;
-  --fg: #eee;
-  --muted: #888;
-  --green: #2ecc71;
-  --amber: #f5b041;
-  --red: #e74c3c;
-  --blue: #3498db;
-  --grey: #555;
-}
-* {
-  box-sizing: border-box;
-}
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font:
-    16px system-ui,
-    sans-serif;
-}
-.pill {
-  padding: 0.25em 0.75em;
-  border-radius: 999px;
-  background: var(--grey);
-  color: #000;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.pill-connected {
-  background: var(--green);
-}
-.pill-degraded {
-  background: var(--amber);
-}
-.pill-failed,
-.pill-never {
-  background: var(--red);
-}
-.pill-awaiting-remote,
-.pill-connecting,
-.pill-gathering,
-.pill-idle {
-  background: var(--blue);
-}
-.qr {
-  background: #fff;
-  padding: 12px;
-  border-radius: 12px;
-  max-width: 90vw;
-  max-height: 60vh;
-}
-.scanner {
-  width: 100%;
-  max-height: 70vh;
-  object-fit: cover;
-  border-radius: 12px;
-  background: #000;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  background: #000;
-}
-.bar .ws {
-  font-size: 2.5rem;
-  font-weight: 800;
-}
-.center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 16px;
-  min-height: calc(100% - 72px);
-  text-align: center;
-}
-button {
-  font: inherit;
-  padding: 0.6em 1.2em;
-  border-radius: 8px;
-  border: 0;
-  background: var(--blue);
-  color: #fff;
-  cursor: pointer;
-}
-button.secondary {
-  background: #333;
-  color: var(--fg);
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
-  padding: 12px;
-}
-.tile {
-  background: #1c1c1c;
-  border-radius: 10px;
-  padding: 10px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.tile[data-state="connected"] {
-  border-color: var(--green);
-}
-.tile[data-state="degraded"] {
-  border-color: var(--amber);
-}
-.tile[data-state="failed"],
-.tile[data-state="never"] {
-  border-color: var(--red);
-  opacity: 0.85;
-}
-.tile .num {
-  font-size: 1.6rem;
-  font-weight: 800;
-}
-.tile .meta {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-.layout {
-  display: grid;
-  grid-template-columns: 1fr 260px;
-  height: 100%;
-}
-.side {
-  border-left: 1px solid #222;
-  padding: 12px;
-  overflow: auto;
-}
-.modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-}
-.modal .card {
-  background: #1c1c1c;
-  border-radius: 12px;
-  padding: 16px;
-  max-width: 640px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-}
-.overlay-id {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40vmin;
-  font-weight: 900;
-  background: rgba(0, 0, 0, 0.9);
-}
-.toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #333;
-  padding: 10px 16px;
-  border-radius: 8px;
-}
+:root { color-scheme: dark; --bg:#111; --fg:#eee; --muted:#888; --green:#2ecc71; --amber:#f5b041; --red:#e74c3c; --blue:#3498db; --grey:#555; }
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 16px system-ui, sans-serif; }
+.pill { padding: .25em .75em; border-radius: 999px; background: var(--grey); color: #000; font-weight: 600; white-space: nowrap; }
+.pill-connected { background: var(--green); } .pill-degraded { background: var(--amber); }
+.pill-failed, .pill-never { background: var(--red); } .pill-awaiting-remote, .pill-connecting, .pill-gathering, .pill-idle { background: var(--blue); }
+.qr { background: #fff; padding: 12px; border-radius: 12px; max-width: 90vw; max-height: 60vh; }
+.scanner { width: 100%; max-height: 70vh; object-fit: cover; border-radius: 12px; background: #000; }
+.bar { display: flex; align-items: center; gap: 16px; padding: 12px 16px; background: #000; }
+.bar .ws { font-size: 2.5rem; font-weight: 800; }
+.center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 16px; min-height: calc(100% - 72px); text-align: center; }
+button { font: inherit; padding: .6em 1.2em; border-radius: 8px; border: 0; background: var(--blue); color: #fff; cursor: pointer; }
+button.secondary { background: #333; color: var(--fg); }
+.grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 12px; }
+.tile { background: #1c1c1c; border-radius: 10px; padding: 10px; cursor: pointer; border: 2px solid transparent; display: flex; flex-direction: column; gap: 6px; }
+.tile[data-state="connected"] { border-color: var(--green); } .tile[data-state="degraded"] { border-color: var(--amber); }
+.tile[data-state="failed"], .tile[data-state="never"] { border-color: var(--red); opacity: .85; }
+.tile .num { font-size: 1.6rem; font-weight: 800; } .tile .meta { color: var(--muted); font-size: .85rem; }
+.layout { display: grid; grid-template-columns: 1fr 260px; height: 100%; }
+.side { border-left: 1px solid #222; padding: 12px; overflow: auto; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal .card { background: #1c1c1c; border-radius: 12px; padding: 16px; max-width: 640px; width: 100%; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.overlay-id { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 40vmin; font-weight: 900; background: rgba(0,0,0,.9); }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; padding: 10px 16px; border-radius: 8px; }
 ```
 
 - [ ] **Step 4: Typecheck + lint**
@@ -3928,12 +3308,10 @@ git commit -m "feat(ui): browser port adapters, core↔react hooks, QrView/Scann
 ### Task 9: Boot layer, router, Student route
 
 **Files:**
-
 - Create: `src/boot/testHook.ts`, `src/boot/bootStudent.ts`, `src/ui/student/StudentApp.tsx`, `src/ui/student/WsConflict.tsx`, `src/ui/HomePage.tsx`
 - Modify: `src/main.tsx`
 
 **Interfaces:**
-
 - Consumes: Task 7 controllers, Task 8 adapters/hooks/components.
 - Produces:
   - `window.__lab: { inject(wire: string): Promise<string | void>; role: string }` (test hook; always registered; teacher's inject resolves with the encoded answer wire)
@@ -3944,21 +3322,15 @@ git commit -m "feat(ui): browser port adapters, core↔react hooks, QrView/Scann
 - [ ] **Step 1: Test hook**
 
 `src/boot/testHook.ts`:
-
 ```ts
 declare global {
-  interface Window {
-    __lab?: { role: string; inject(wire: string): Promise<string | void> };
-  }
+  interface Window { __lab?: { role: string; inject(wire: string): Promise<string | void> } }
 }
 /**
  * E2E tests and manual cross-tab checks bypass cameras by calling window.__lab.inject(wire) with
  * what the QR would carry. The teacher's hook resolves with the encoded answer wire.
  */
-export function registerTestHook(
-  role: string,
-  inject: (wire: string) => Promise<string | void>,
-): void {
+export function registerTestHook(role: string, inject: (wire: string) => Promise<string | void>): void {
   window.__lab = { role, inject };
 }
 ```
@@ -3966,7 +3338,6 @@ export function registerTestHook(
 - [ ] **Step 2: Student boot**
 
 `src/boot/bootStudent.ts`:
-
 ```ts
 import { realClock } from "../core/clock";
 import { decodeWire } from "../core/sdpCodec";
@@ -3996,14 +3367,8 @@ export async function bootStudent(ws: number): Promise<StudentController> {
   const certificates = await loadCertificate();
   const c = new StudentController(
     {
-      rtc: browserRtc,
-      clock: realClock,
-      kv: browserKv,
-      wakeLock: browserWakeLock,
-      device: browserDevice,
-      reload: () => location.reload(),
-      appVersion: APP_VERSION,
-      ua: navigator.userAgent,
+      rtc: browserRtc, clock: realClock, kv: browserKv, wakeLock: browserWakeLock, device: browserDevice,
+      reload: () => location.reload(), appVersion: APP_VERSION, ua: navigator.userAgent,
       ...(certificates ? { certificates } : {}),
       log: (m) => console.warn("[student]", m),
     },
@@ -4021,28 +3386,15 @@ export async function bootStudent(ws: number): Promise<StudentController> {
 - [ ] **Step 3: Student UI**
 
 `src/ui/student/WsConflict.tsx`:
-
 ```tsx
-export function WsConflict({
-  urlWs,
-  storedWs,
-  onPick,
-}: {
-  urlWs: number;
-  storedWs: number;
-  onPick: (ws: number) => void;
-}) {
+export function WsConflict({ urlWs, storedWs, onPick }: { urlWs: number; storedWs: number; onPick: (ws: number) => void }) {
   return (
     <div className="center">
       <h1>Which workstation is this?</h1>
-      <p>
-        This iPad was workstation <b>{storedWs}</b>, but the address says <b>{urlWs}</b>.
-      </p>
+      <p>This iPad was workstation <b>{storedWs}</b>, but the address says <b>{urlWs}</b>.</p>
       <div style={{ display: "flex", gap: 16 }}>
         <button onClick={() => onPick(urlWs)}>Switch to {urlWs}</button>
-        <button className="secondary" onClick={() => onPick(storedWs)}>
-          Stay {storedWs}
-        </button>
+        <button className="secondary" onClick={() => onPick(storedWs)}>Stay {storedWs}</button>
       </div>
     </div>
   );
@@ -4050,7 +3402,6 @@ export function WsConflict({
 ```
 
 `src/ui/student/StudentApp.tsx`:
-
 ```tsx
 import { useCallback, useEffect, useState } from "react";
 import type { StudentController } from "../../core/studentController";
@@ -4065,19 +3416,8 @@ import { StatusPill } from "../shared/StatusPill";
 
 export function StudentApp({ boot }: { boot: Promise<StudentController> }) {
   const { value: c, error } = usePromise(boot);
-  if (error)
-    return (
-      <div className="center">
-        <h1>Could not start</h1>
-        <pre>{error.message}</pre>
-      </div>
-    );
-  if (!c)
-    return (
-      <div className="center">
-        <h1>Starting…</h1>
-      </div>
-    );
+  if (error) return <div className="center"><h1>Could not start</h1><pre>{error.message}</pre></div>;
+  if (!c) return <div className="center"><h1>Starting…</h1></div>;
   return <StudentView c={c} />;
 }
 
@@ -4090,31 +3430,18 @@ function StudentView({ c }: { c: StudentController }) {
 
   useEffect(() => {
     if (view.state === "connected") setScanning(false);
-    if (view.state === "failed") {
-      setToast("Connection lost — showing a new code");
-      setTimeout(() => setToast(undefined), 4000);
-    }
+    if (view.state === "failed") { setToast("Connection lost — showing a new code"); setTimeout(() => setToast(undefined), 4000); }
   }, [view.state]);
 
   useEffect(() => {
-    if (lastCmd?.cmd === "show-id") {
-      setShowId(true);
-      const t = setTimeout(() => setShowId(false), 5000);
-      return () => clearTimeout(t);
-    }
+    if (lastCmd?.cmd === "show-id") { setShowId(true); const t = setTimeout(() => setShowId(false), 5000); return () => clearTimeout(t); }
   }, [lastCmd]);
 
-  const onWire = useCallback(
-    (wire: string) => {
-      void decodeWire(wire)
-        .then((p) => session?.applyRemote(p))
-        .catch((e: unknown) => {
-          setToast(`Not a valid code: ${(e as Error).message}`);
-          setTimeout(() => setToast(undefined), 3000);
-        });
-    },
-    [session],
-  );
+  const onWire = useCallback((wire: string) => {
+    void decodeWire(wire)
+      .then((p) => session?.applyRemote(p))
+      .catch((e: unknown) => { setToast(`Not a valid code: ${(e as Error).message}`); setTimeout(() => setToast(undefined), 3000); });
+  }, [session]);
 
   return (
     <div id="student" data-state={view.state}>
@@ -4136,18 +3463,12 @@ function StudentView({ c }: { c: StudentController }) {
           <>
             <Scanner onWire={onWire} onError={(e) => setToast(`Camera: ${e.message}`)} />
             <p>Hold the phone's code up to the camera</p>
-            <button className="secondary" onClick={() => setScanning(false)}>
-              Back to my code
-            </button>
+            <button className="secondary" onClick={() => setScanning(false)}>Back to my code</button>
           </>
         )}
         {view.state === "connecting" && <h2>Connecting…</h2>}
-        {(view.state === "connected" || view.state === "degraded") && (
-          <h2 style={{ color: "var(--muted)" }}>Ready</h2>
-        )}
-        {(view.state === "gathering" || view.state === "idle" || view.state === "none") && (
-          <h2>Starting…</h2>
-        )}
+        {(view.state === "connected" || view.state === "degraded") && <h2 style={{ color: "var(--muted)" }}>Ready</h2>}
+        {(view.state === "gathering" || view.state === "idle" || view.state === "none") && <h2>Starting…</h2>}
       </main>
       {showId && <div className="overlay-id">{c.ws}</div>}
       {toast && <div className="toast">{toast}</div>}
@@ -4159,17 +3480,13 @@ function StudentView({ c }: { c: StudentController }) {
 - [ ] **Step 4: Home page and router**
 
 `src/ui/HomePage.tsx`:
-
 ```tsx
 import { APP_VERSION } from "./platform/appVersion";
 export function HomePage() {
   return (
     <div className="center">
       <h1>Learning Lab</h1>
-      <p>
-        <a href="teacher">Teacher</a> · <a href="courier">Courier</a> ·{" "}
-        <a href="student?ws=1">Student 1</a>
-      </p>
+      <p><a href="teacher">Teacher</a> · <a href="courier">Courier</a> · <a href="student?ws=1">Student 1</a></p>
       <p style={{ color: "var(--muted)" }}>{APP_VERSION}</p>
     </div>
   );
@@ -4177,7 +3494,6 @@ export function HomePage() {
 ```
 
 `src/main.tsx`:
-
 ```tsx
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -4193,40 +3509,22 @@ const path = location.pathname.replace(base, "").replace(/\/+$/, "") || "/";
 function StudentRoute() {
   const { urlWs, storedWs } = resolveWs();
   const [ws, setWs] = useState<number | undefined>(
-    urlWs !== undefined && storedWs !== undefined && urlWs !== storedWs
-      ? undefined
-      : (urlWs ?? storedWs),
+    urlWs !== undefined && storedWs !== undefined && urlWs !== storedWs ? undefined : (urlWs ?? storedWs),
   );
-  const [boot, setBoot] = useState<
-    Promise<import("./core/studentController").StudentController> | undefined
-  >(() => (ws !== undefined ? bootStudent(ws) : undefined));
+  const [boot, setBoot] = useState<Promise<import("./core/studentController").StudentController> | undefined>(
+    () => (ws !== undefined ? bootStudent(ws) : undefined),
+  );
   if (ws === undefined && urlWs !== undefined && storedWs !== undefined) {
-    return (
-      <WsConflict
-        urlWs={urlWs}
-        storedWs={storedWs}
-        onPick={(w) => {
-          setWs(w);
-          setBoot(bootStudent(w));
-        }}
-      />
-    );
+    return <WsConflict urlWs={urlWs} storedWs={storedWs} onPick={(w) => { setWs(w); setBoot(bootStudent(w)); }} />;
   }
-  if (boot === undefined)
-    return (
-      <div className="center">
-        <h1>Open this page as /student?ws=N (1–30)</h1>
-      </div>
-    );
+  if (boot === undefined) return <div className="center"><h1>Open this page as /student?ws=N (1–30)</h1></div>;
   return <StudentApp boot={boot} />;
 }
 
 function route() {
   switch (path) {
-    case "/student":
-      return <StudentRoute />;
-    default:
-      return <HomePage />;
+    case "/student": return <StudentRoute />;
+    default: return <HomePage />;
   }
 }
 
@@ -4254,19 +3552,16 @@ git commit -m "feat(student): boot layer, ws resolution, offer QR + scanner UI, 
 ### Task 10: Teacher route
 
 **Files:**
-
 - Create: `src/boot/bootTeacher.ts`, `src/ui/teacher/TeacherApp.tsx`, `src/ui/teacher/Tile.tsx`, `src/ui/teacher/ScanModal.tsx`, `src/ui/teacher/TileDrawer.tsx`, `src/ui/teacher/RepairQueue.tsx`
 - Modify: `src/main.tsx` (add `/teacher` case)
 
 **Interfaces:**
-
 - Consumes: `LabController`, `useLabRoster`, `QrView`, `Scanner`, `StatusPill`, `encodeWire`/`decodeWire`.
 - Produces: `bootTeacher(): Promise<LabController>`; `<TeacherApp boot />`. DOM contract for e2e: each tile is `[data-tile="N"][data-state=…]`; the answer QR is `canvas[data-payload][data-role="answer"][data-ws="N"]`; header counts are `[data-count="connected"]` etc.
 
 - [ ] **Step 1: Teacher boot**
 
 `src/boot/bootTeacher.ts`:
-
 ```ts
 import { realClock } from "../core/clock";
 import { LabController } from "../core/labController";
@@ -4282,11 +3577,7 @@ export async function bootTeacher(): Promise<LabController> {
   await primeCameraPermission();
   const certificates = await loadCertificate();
   const lab = new LabController({
-    rtc: browserRtc,
-    clock: realClock,
-    kv: browserKv,
-    appVersion: APP_VERSION,
-    ua: navigator.userAgent,
+    rtc: browserRtc, clock: realClock, kv: browserKv, appVersion: APP_VERSION, ua: navigator.userAgent,
     ...(certificates ? { certificates } : {}),
     log: (m) => console.warn("[teacher]", m),
   });
@@ -4302,7 +3593,6 @@ export async function bootTeacher(): Promise<LabController> {
 - [ ] **Step 2: Tile, RepairQueue, TileDrawer**
 
 `src/ui/teacher/Tile.tsx`:
-
 ```tsx
 import type { RosterView } from "../../core/labController";
 import { StatusPill } from "../shared/StatusPill";
@@ -4310,23 +3600,12 @@ import { StatusPill } from "../shared/StatusPill";
 function ago(ts?: number) {
   if (!ts) return "never";
   const s = Math.round((Date.now() - ts) / 1000);
-  return s < 60
-    ? `${s}s ago`
-    : s < 3600
-      ? `${Math.round(s / 60)}m ago`
-      : `${Math.round(s / 3600)}h ago`;
+  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
 }
 
 export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
   return (
-    <div
-      className="tile"
-      data-tile={t.ws}
-      data-state={t.state}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-    >
+    <div className="tile" data-tile={t.ws} data-state={t.state} onClick={onClick} role="button" tabIndex={0}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span className="num">{t.ws}</span>
         <StatusPill state={t.state} />
@@ -4337,11 +3616,7 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
         <span>seen {ago(t.lastConnectedAt)}</span>
       </div>
       <div className="meta">
-        {t.battery !== undefined && (
-          <span>
-            {t.charging ? "⚡" : "🔋"} {Math.round(t.battery * 100)}%{" "}
-          </span>
-        )}
+        {t.battery !== undefined && <span>{t.charging ? "⚡" : "🔋"} {Math.round(t.battery * 100)}% </span>}
         {t.visibility === "hidden" && <span title="Screen hidden">🙈 </span>}
         {t.wakeLock === false && <span title="No wake lock">💤 </span>}
         {t.versionMismatch && <span title={`Student runs ${t.remoteAppVersion}`}>⚠️ version</span>}
@@ -4352,22 +3627,13 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
 ```
 
 `src/ui/teacher/RepairQueue.tsx`:
-
 ```tsx
 export function RepairQueue({ queue }: { queue: number[] }) {
   return (
     <aside className="side" data-repair-queue>
       <h3>Needs re-pair ({queue.length})</h3>
-      {queue.length === 0 ? (
-        <p style={{ color: "var(--muted)" }}>All stations connected.</p>
-      ) : (
-        <ol>
-          {queue.map((ws) => (
-            <li key={ws} data-queue-ws={ws}>
-              Workstation {ws}
-            </li>
-          ))}
-        </ol>
+      {queue.length === 0 ? <p style={{ color: "var(--muted)" }}>All stations connected.</p> : (
+        <ol>{queue.map((ws) => <li key={ws} data-queue-ws={ws}>Workstation {ws}</li>)}</ol>
       )}
     </aside>
   );
@@ -4375,62 +3641,27 @@ export function RepairQueue({ queue }: { queue: number[] }) {
 ```
 
 `src/ui/teacher/TileDrawer.tsx`:
-
 ```tsx
 import { useState } from "react";
 import type { LabController, RosterView } from "../../core/labController";
 
-export function TileDrawer({
-  lab,
-  t,
-  onClose,
-}: {
-  lab: LabController;
-  t: RosterView;
-  onClose: () => void;
-}) {
+export function TileDrawer({ lab, t, onClose }: { lab: LabController; t: RosterView; onClose: () => void }) {
   const [label, setLabel] = useState(t.label ?? "");
   return (
     <div className="modal" onClick={onClose}>
       <div className="card" onClick={(e) => e.stopPropagation()} style={{ alignItems: "stretch" }}>
         <h2>Workstation {t.ws}</h2>
-        <label>
-          Label{" "}
-          <input
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            onBlur={() => lab.setLabel(t.ws, label)}
-          />
-        </label>
+        <label>Label <input value={label} onChange={(e) => setLabel(e.target.value)} onBlur={() => lab.setLabel(t.ws, label)} /></label>
         <p className="meta">UA: {t.lastSeenUa ?? "—"}</p>
         <p className="meta">Student version: {t.remoteAppVersion ?? "—"}</p>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => lab.sendCmd(t.ws, "ping")}>Ping</button>
           <button onClick={() => lab.sendCmd(t.ws, "show-id")}>Show ID on iPad</button>
-          <button
-            className="secondary"
-            onClick={() => {
-              if (confirm(`Reload workstation ${t.ws}? It will need re-pairing.`))
-                lab.sendCmd(t.ws, "reload");
-            }}
-          >
-            Reload
-          </button>
+          <button className="secondary" onClick={() => { if (confirm(`Reload workstation ${t.ws}? It will need re-pairing.`)) lab.sendCmd(t.ws, "reload"); }}>Reload</button>
         </div>
         <h3>History</h3>
-        <ul className="meta">
-          {t.history
-            .slice(-20)
-            .reverse()
-            .map((h, i) => (
-              <li key={i}>
-                {new Date(h.at).toLocaleTimeString()} — {h.state}
-              </li>
-            ))}
-        </ul>
-        <button className="secondary" onClick={onClose}>
-          Close
-        </button>
+        <ul className="meta">{t.history.slice(-20).reverse().map((h, i) => <li key={i}>{new Date(h.at).toLocaleTimeString()} — {h.state}</li>)}</ul>
+        <button className="secondary" onClick={onClose}>Close</button>
       </div>
     </div>
   );
@@ -4440,7 +3671,6 @@ export function TileDrawer({
 - [ ] **Step 3: ScanModal**
 
 `src/ui/teacher/ScanModal.tsx`:
-
 ```tsx
 import { useCallback, useEffect, useState } from "react";
 import type { LabController } from "../../core/labController";
@@ -4455,27 +3685,20 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
   const deviceId = lab.settings.cameraDeviceId;
 
   useEffect(() => {
-    void navigator.mediaDevices
-      .enumerateDevices()
-      .then((d) => setDevices(d.filter((x) => x.kind === "videoinput")));
+    void navigator.mediaDevices.enumerateDevices().then((d) => setDevices(d.filter((x) => x.kind === "videoinput")));
   }, []);
 
-  const onWire = useCallback(
-    (wire: string) => {
-      void (async () => {
-        try {
-          const p = await decodeWire(wire);
-          if (p.role !== "offer") throw new Error("That is an answer code; scan a student's offer");
-          const a = await lab.acceptOffer(p);
-          setAnswer({ wire: await encodeWire(a), ws: p.ws });
-          setError(undefined);
-        } catch (e) {
-          setError((e as Error).message);
-        }
-      })();
-    },
-    [lab],
-  );
+  const onWire = useCallback((wire: string) => {
+    void (async () => {
+      try {
+        const p = await decodeWire(wire);
+        if (p.role !== "offer") throw new Error("That is an answer code; scan a student's offer");
+        const a = await lab.acceptOffer(p);
+        setAnswer({ wire: await encodeWire(a), ws: p.ws });
+        setError(undefined);
+      } catch (e) { setError((e as Error).message); }
+    })();
+  }, [lab]);
 
   return (
     <div className="modal">
@@ -4483,22 +3706,11 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
         {!answer ? (
           <>
             <h2>Scan a student's code</h2>
-            <Scanner
-              {...(deviceId ? { deviceId } : {})}
-              onWire={onWire}
-              onError={(e) => setError(e.message)}
-            />
+            <Scanner {...(deviceId ? { deviceId } : {})} onWire={onWire} onError={(e) => setError(e.message)} />
             {devices.length > 1 && (
-              <select
-                value={deviceId ?? ""}
-                onChange={(e) => lab.updateSettings({ cameraDeviceId: e.target.value })}
-              >
+              <select value={deviceId ?? ""} onChange={(e) => lab.updateSettings({ cameraDeviceId: e.target.value })}>
                 <option value="">Default camera</option>
-                {devices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label || d.deviceId.slice(0, 8)}
-                  </option>
-                ))}
+                {devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId.slice(0, 8)}</option>)}
               </select>
             )}
           </>
@@ -4511,9 +3723,7 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
           </>
         )}
         {error && <p style={{ color: "var(--red)" }}>{error}</p>}
-        <button className="secondary" onClick={onClose}>
-          Close
-        </button>
+        <button className="secondary" onClick={onClose}>Close</button>
       </div>
     </div>
   );
@@ -4523,7 +3733,6 @@ export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () =>
 - [ ] **Step 4: TeacherApp**
 
 `src/ui/teacher/TeacherApp.tsx`:
-
 ```tsx
 import { useState } from "react";
 import type { LabController } from "../../core/labController";
@@ -4537,19 +3746,8 @@ import { TileDrawer } from "./TileDrawer";
 
 export function TeacherApp({ boot }: { boot: Promise<LabController> }) {
   const { value: lab, error } = usePromise(boot);
-  if (error)
-    return (
-      <div className="center">
-        <h1>Could not start</h1>
-        <pre>{error.message}</pre>
-      </div>
-    );
-  if (!lab)
-    return (
-      <div className="center">
-        <h1>Starting…</h1>
-      </div>
-    );
+  if (error) return <div className="center"><h1>Could not start</h1><pre>{error.message}</pre></div>;
+  if (!lab) return <div className="center"><h1>Starting…</h1></div>;
   return <Dashboard lab={lab} />;
 }
 
@@ -4563,25 +3761,13 @@ function Dashboard({ lab }: { lab: LabController }) {
       <div>
         <header className="bar">
           <strong>Learning Lab</strong>
-          <span data-count="connected" style={{ color: "var(--green)" }}>
-            ● {counts.connected}
-          </span>
-          <span data-count="degraded" style={{ color: "var(--amber)" }}>
-            ● {counts.degraded}
-          </span>
-          <span data-count="failed" style={{ color: "var(--red)" }}>
-            ● {counts.failed + counts.never}
-          </span>
-          <button onClick={() => setScanning(true)} data-action="scan">
-            Scan
-          </button>
+          <span data-count="connected" style={{ color: "var(--green)" }}>● {counts.connected}</span>
+          <span data-count="degraded" style={{ color: "var(--amber)" }}>● {counts.degraded}</span>
+          <span data-count="failed" style={{ color: "var(--red)" }}>● {counts.failed + counts.never}</span>
+          <button onClick={() => setScanning(true)} data-action="scan">Scan</button>
           <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{APP_VERSION}</span>
         </header>
-        <main className="grid">
-          {tiles.map((t) => (
-            <Tile key={t.ws} t={t} onClick={() => setOpen(t.ws)} />
-          ))}
-        </main>
+        <main className="grid">{tiles.map((t) => <Tile key={t.ws} t={t} onClick={() => setOpen(t.ws)} />)}</main>
       </div>
       <RepairQueue queue={queue} />
       {scanning && <ScanModal lab={lab} onClose={() => setScanning(false)} />}
@@ -4594,14 +3780,12 @@ function Dashboard({ lab }: { lab: LabController }) {
 - [ ] **Step 5: Route**
 
 In `src/main.tsx` add imports and a case:
-
 ```tsx
 import { bootTeacher } from "./boot/bootTeacher";
 import { TeacherApp } from "./ui/teacher/TeacherApp";
 // inside route():
     case "/teacher": return <TeacherApp boot={bootTeacher()} />;
 ```
-
 `bootTeacher()` is called once at module level inside `route()`, which runs once; StrictMode re-renders do not re-run it.
 
 - [ ] **Step 6: Manual cross-tab check**
@@ -4629,19 +3813,16 @@ git commit -m "feat(teacher): dashboard grid, scan modal with answer QR, repair 
 ### Task 11: Courier route, PWA manifest, SPA fallback
 
 **Files:**
-
 - Create: `src/ui/courier/CourierApp.tsx`, `public/manifest.webmanifest`, `public/icon.svg`
 - Modify: `src/main.tsx`, `vite.config.ts` (404 fallback plugin)
 
 **Interfaces:**
-
 - Consumes: `Scanner`, `QrView`, `decodeWire`.
 - Produces: `/courier` route. Build emits `dist/404.html` identical to `dist/index.html`.
 
 - [ ] **Step 1: CourierApp**
 
 `src/ui/courier/CourierApp.tsx`:
-
 ```tsx
 import { useCallback, useState } from "react";
 import type { SdpPayload } from "../../schemas/sdpPayload";
@@ -4659,39 +3840,24 @@ export function CourierApp() {
   const onWire = useCallback((wire: string) => {
     void decodeWire(wire).then(
       (payload) => setHeld({ wire, payload }),
-      () => {
-        setFlash(true);
-        setTimeout(() => setFlash(false), 600);
-      },
+      () => { setFlash(true); setTimeout(() => setFlash(false), 600); },
     );
   }, []);
 
   if (held) {
     const { payload } = held;
-    const target =
-      payload.role === "offer" ? "show to the TEACHER station" : `show to iPad ${payload.ws}`;
+    const target = payload.role === "offer" ? "show to the TEACHER station" : `show to iPad ${payload.ws}`;
     return (
       <div className="center" data-courier="holding">
-        <h2>
-          ws {payload.ws} · {payload.role.toUpperCase()}
-        </h2>
-        <QrView
-          wire={held.wire}
-          role={payload.role}
-          ws={payload.ws}
-          size={Math.min(window.innerWidth - 32, 520)}
-        />
+        <h2>ws {payload.ws} · {payload.role.toUpperCase()}</h2>
+        <QrView wire={held.wire} role={payload.role} ws={payload.ws} size={Math.min(window.innerWidth - 32, 520)} />
         <p>Now {target}.</p>
         <button onClick={() => setHeld(undefined)}>Done — scan next</button>
       </div>
     );
   }
   return (
-    <div
-      className="center"
-      data-courier="scanning"
-      style={{ background: flash ? "var(--red)" : undefined }}
-    >
+    <div className="center" data-courier="scanning" style={{ background: flash ? "var(--red)" : undefined }}>
       <h2>Point at a code</h2>
       <Scanner onWire={onWire} onError={(e) => setError(e.message)} />
       {error && <p style={{ color: "var(--red)" }}>{error}</p>}
@@ -4703,7 +3869,6 @@ export function CourierApp() {
 - [ ] **Step 2: Route**
 
 In `src/main.tsx`:
-
 ```tsx
 import { CourierApp } from "./ui/courier/CourierApp";
 // inside route():
@@ -4713,7 +3878,6 @@ import { CourierApp } from "./ui/courier/CourierApp";
 - [ ] **Step 3: Manifest, icon, 404 fallback**
 
 `public/manifest.webmanifest`:
-
 ```json
 {
   "name": "Learning Lab",
@@ -4728,7 +3892,6 @@ import { CourierApp } from "./ui/courier/CourierApp";
 ```
 
 `public/icon.svg`:
-
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><rect width="128" height="128" rx="24" fill="#111"/><circle cx="40" cy="64" r="14" fill="#3498db"/><circle cx="88" cy="64" r="14" fill="#2ecc71"/><path d="M54 64h20" stroke="#eee" stroke-width="8" stroke-linecap="round"/></svg>
 ```
@@ -4736,7 +3899,6 @@ import { CourierApp } from "./ui/courier/CourierApp";
 In `index.html`, change the manifest link to a relative path so the Pages base works: `<link rel="manifest" href="manifest.webmanifest" />`. Also add `<link rel="apple-touch-icon" href="icon.svg" />` (iOS falls back to a screenshot if it rejects SVG; acceptable for Phase 1).
 
 `vite.config.ts` — add a plugin that copies `index.html` to `404.html` on build:
-
 ```ts
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
@@ -4747,11 +3909,7 @@ const spaFallback = (): Plugin => ({
   name: "spa-404-fallback",
   closeBundle() {
     const dist = fileURLToPath(new URL("./dist/", import.meta.url));
-    try {
-      copyFileSync(`${dist}index.html`, `${dist}404.html`);
-    } catch {
-      /* dev server: no dist */
-    }
+    try { copyFileSync(`${dist}index.html`, `${dist}404.html`); } catch { /* dev server: no dist */ }
   },
 });
 
@@ -4783,33 +3941,25 @@ git commit -m "feat(courier): scan→hold→show flow; PWA manifest; 404 SPA fal
 ### Task 12: Playwright end-to-end
 
 **Files:**
-
 - Create: `playwright.config.ts`, `test/e2e/helpers.ts`, `test/e2e/pairing.spec.ts`, `test/e2e/codec.spec.ts`
 - Modify: `src/main.tsx` (expose codec on `window.__labCodec` in dev builds), `.gitignore`
 
 **Interfaces:**
-
 - Consumes: `window.__lab.inject` (Task 9/10), DOM contract: student root `#student[data-state]`, `canvas[data-payload][data-role][data-ws]`, teacher `[data-tile][data-state]`, `[data-queue-ws]`, `[data-count]`.
 - Produces: `window.__labCodec = { extractPayload, buildSdp, encodeWire, decodeWire }` (dev only). Test helpers `openTeacher(browser, settings?)`, `openStudent(browser, ws)`, `pair(teacherPage, studentPage, ws)`.
 
 - [ ] **Step 1: Expose codec for the template test (dev only)**
 
 In `src/main.tsx` add before `createRoot`:
-
 ```tsx
 import * as codec from "./core/sdpCodec";
-declare global {
-  interface Window {
-    __labCodec?: typeof codec;
-  }
-}
+declare global { interface Window { __labCodec?: typeof codec } }
 if (import.meta.env.DEV) window.__labCodec = codec;
 ```
 
 - [ ] **Step 2: Playwright config**
 
 `playwright.config.ts`:
-
 ```ts
 import { defineConfig, devices } from "@playwright/test";
 
@@ -4822,21 +3972,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: { baseURL: "http://localhost:5173", trace: "retain-on-failure" },
-  webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:5173",
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: { command: "pnpm dev", url: "http://localhost:5173", reuseExistingServer: !process.env.CI, timeout: 60_000 },
   projects: [
     {
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
         permissions: ["camera"],
-        launchOptions: {
-          args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
-        },
+        launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] },
       },
     },
     {
@@ -4853,16 +3996,12 @@ Add to `.gitignore`: `playwright/.cache`.
 - [ ] **Step 3: Helpers**
 
 `test/e2e/helpers.ts`:
-
 ```ts
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 
 export const SHORT_TIMERS = { heartbeatMs: 300, degradedMs: 1200, failedMs: 2500 };
 
-export async function openTeacher(
-  browser: Browser,
-  settings = SHORT_TIMERS,
-): Promise<{ ctx: BrowserContext; page: Page }> {
+export async function openTeacher(browser: Browser, settings = SHORT_TIMERS): Promise<{ ctx: BrowserContext; page: Page }> {
   const ctx = await browser.newContext({ permissions: ["camera"] });
   await ctx.addInitScript((s) => {
     localStorage.setItem("lab.teacher.v1", JSON.stringify({ roster: {}, settings: s }));
@@ -4873,21 +4012,14 @@ export async function openTeacher(
   return { ctx, page };
 }
 
-export async function openStudent(
-  browser: Browser,
-  ws: number,
-): Promise<{ ctx: BrowserContext; page: Page }> {
+export async function openStudent(browser: Browser, ws: number): Promise<{ ctx: BrowserContext; page: Page }> {
   const ctx = await browser.newContext({ permissions: ["camera"] });
   const page = await ctx.newPage();
   await page.goto(`/student?ws=${ws}`);
   return { ctx, page };
 }
 
-export async function readPayload(
-  page: Page,
-  role: "offer" | "answer",
-  ws: number,
-): Promise<string> {
+export async function readPayload(page: Page, role: "offer" | "answer", ws: number): Promise<string> {
   const loc = page.locator(`canvas[data-payload][data-role='${role}'][data-ws='${ws}']`);
   await expect(loc).toHaveAttribute("data-payload", /^LAB1:/);
   return (await loc.getAttribute("data-payload"))!;
@@ -4909,7 +4041,6 @@ export async function expectState(page: Page, selector: string, state: string, t
 - [ ] **Step 4: Pairing spec**
 
 `test/e2e/pairing.spec.ts`:
-
 ```ts
 import { expect, test } from "@playwright/test";
 import { expectState, openStudent, openTeacher, pair, readPayload } from "./helpers";
@@ -4918,9 +4049,7 @@ test("student shows an offer QR on load", async ({ browser }) => {
   const s = await openStudent(browser, 7);
   await expect(s.page.locator(".bar .ws")).toHaveText("7");
   await expectState(s.page, "#student", "awaiting-remote");
-  await expect(
-    s.page.locator("canvas[data-payload][data-role='offer'][data-ws='7']"),
-  ).toBeVisible();
+  await expect(s.page.locator("canvas[data-payload][data-role='offer'][data-ws='7']")).toBeVisible();
   await s.ctx.close();
 });
 
@@ -4943,9 +4072,7 @@ test("student loss → degraded → failed → repair queue → re-pair succeeds
   await pair(t.page, s1.page, 3);
   await expectState(t.page, "[data-tile='3']", "connected");
   await s1.ctx.close();
-  await expect(t.page.locator("[data-tile='3']")).toHaveAttribute("data-state", /degraded|failed/, {
-    timeout: 5000,
-  });
+  await expect(t.page.locator("[data-tile='3']")).toHaveAttribute("data-state", /degraded|failed/, { timeout: 5000 });
   await expectState(t.page, "[data-tile='3']", "failed", 8000);
   await expect(t.page.locator("[data-queue-ws='3']")).toBeVisible();
   const s2 = await openStudent(browser, 3);
@@ -4965,9 +4092,7 @@ test("student survives teacher disappearance by showing a fresh offer", async ({
   await t.ctx.close();
   // student timers are defaults (15 s degraded, 60 s failed) — too slow for CI, so ICE 'failed'/dc close must drive it.
   await expectState(s.page, "#student", "awaiting-remote", 45_000);
-  const secondOffer = await s.page
-    .locator("canvas[data-payload][data-role='offer']")
-    .getAttribute("data-payload");
+  const secondOffer = await s.page.locator("canvas[data-payload][data-role='offer']").getAttribute("data-payload");
   expect(secondOffer).not.toBe(firstOffer);
   await s.ctx.close();
 });
@@ -4984,9 +4109,7 @@ test("two students pair independently", async ({ browser }) => {
   await Promise.all([a.ctx.close(), b.ctx.close(), t.ctx.close()]);
 });
 
-test("garbage injected into the student is rejected without breaking the session", async ({
-  browser,
-}) => {
+test("garbage injected into the student is rejected without breaking the session", async ({ browser }) => {
   const s = await openStudent(browser, 9);
   await expectState(s.page, "#student", "awaiting-remote");
   await expect(s.page.evaluate(() => window.__lab!.inject("LAB1:garbage00"))).rejects.toThrow();
@@ -4998,7 +4121,6 @@ test("garbage injected into the student is rejected without breaking the session
 - [ ] **Step 5: Codec template spec (runs in Chromium and WebKit)**
 
 `test/e2e/codec.spec.ts`:
-
 ```ts
 import { expect, test } from "@playwright/test";
 
@@ -5011,12 +4133,7 @@ test("rebuilt SDP is accepted by a real RTCPeerConnection in both directions", a
       new Promise<void>((res) => {
         if (pc.iceGatheringState === "complete") return res();
         const t = setTimeout(res, 3000);
-        pc.onicegatheringstatechange = () => {
-          if (pc.iceGatheringState === "complete") {
-            clearTimeout(t);
-            res();
-          }
-        };
+        pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); res(); } };
       });
 
     const a = new RTCPeerConnection({ iceServers: [] });
@@ -5040,10 +4157,7 @@ test("rebuilt SDP is accepted by a real RTCPeerConnection in both directions", a
     const connected = await new Promise<boolean>((res) => {
       const t = setTimeout(() => res(false), 15000);
       const check = () => {
-        if (a.iceConnectionState === "connected" || a.iceConnectionState === "completed") {
-          clearTimeout(t);
-          res(true);
-        }
+        if (a.iceConnectionState === "connected" || a.iceConnectionState === "completed") { clearTimeout(t); res(true); }
       };
       a.oniceconnectionstatechange = check;
       check();
@@ -5063,10 +4177,7 @@ test("rebuilt SDP is accepted by a real RTCPeerConnection in both directions", a
   expect(result.answerWireLen).toBeLessThan(300);
   // Loopback ICE inside one browser process may legitimately not complete in headless CI; the assertion
   // that matters for the codec is that both setRemoteDescription calls above did not throw.
-  test.info().annotations.push({
-    type: "ice",
-    description: `${result.ice} (connected=${result.connected})`,
-  });
+  test.info().annotations.push({ type: "ice", description: `${result.ice} (connected=${result.connected})` });
 });
 ```
 
@@ -5087,51 +4198,40 @@ git commit -m "test(e2e): playwright pairing, failure/re-pair, and cross-engine 
 ### Task 13: `/dev/load` — 30 students on one machine
 
 **Files:**
-
 - Create: `src/ui/dev/LoadPage.tsx`
 - Modify: `src/boot/bootStudent.ts` (autopair via `postMessage` when framed), `src/main.tsx`
 
 **Interfaces:**
-
 - Consumes: `bootTeacher`, `LabController`, `useLabRoster`, `Tile`, `encodeWire`/`decodeWire`.
 - Produces: `/dev/load` route; iframe protocol `{ type: "lab-offer", ws, wire }` (child → parent) and `{ type: "lab-answer", wire }` (parent → child), guarded by Zod.
 
 - [ ] **Step 1: Autopair in the student boot**
 
 In `src/boot/bootStudent.ts`, add at top:
-
 ```ts
 import { z } from "zod";
 const AnswerMsg = z.object({ type: z.literal("lab-answer"), wire: z.string().startsWith("LAB1:") });
 ```
-
 and at the end of `bootStudent` before `c.start()`:
-
 ```ts
-if (window.parent !== window && new URLSearchParams(location.search).get("autopair") === "1") {
-  c.on("session", (s) => {
-    s.on("localPayload", (p) => {
-      void encodeWire(p).then((wire) =>
-        window.parent.postMessage({ type: "lab-offer", ws, wire }, "*"),
-      );
+  if (window.parent !== window && new URLSearchParams(location.search).get("autopair") === "1") {
+    c.on("session", (s) => {
+      s.on("localPayload", (p) => {
+        void encodeWire(p).then((wire) => window.parent.postMessage({ type: "lab-offer", ws, wire }, "*"));
+      });
     });
-  });
-  window.addEventListener("message", (ev) => {
-    const m = AnswerMsg.safeParse(ev.data);
-    if (!m.success) return;
-    void decodeWire(m.data.wire)
-      .then((p) => c.session?.applyRemote(p))
-      .catch((e: unknown) => console.warn("[autopair]", e));
-  });
-}
+    window.addEventListener("message", (ev) => {
+      const m = AnswerMsg.safeParse(ev.data);
+      if (!m.success) return;
+      void decodeWire(m.data.wire).then((p) => c.session?.applyRemote(p)).catch((e: unknown) => console.warn("[autopair]", e));
+    });
+  }
 ```
-
 Add `encodeWire` to the existing `sdpCodec` import.
 
 - [ ] **Step 2: LoadPage**
 
 `src/ui/dev/LoadPage.tsx`:
-
 ```tsx
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
@@ -5141,33 +4241,16 @@ import { useLabRoster } from "../../hooks/useLabRoster";
 import { usePromise } from "../../hooks/usePromise";
 import { Tile } from "../teacher/Tile";
 
-const OfferMsg = z.object({
-  type: z.literal("lab-offer"),
-  ws: z.number().int().min(1).max(30),
-  wire: z.string().startsWith("LAB1:"),
-});
+const OfferMsg = z.object({ type: z.literal("lab-offer"), ws: z.number().int().min(1).max(30), wire: z.string().startsWith("LAB1:") });
 
 export function LoadPage({ boot }: { boot: Promise<LabController> }) {
   const { value: lab } = usePromise(boot);
   const [count, setCount] = useState(30);
-  if (!lab)
-    return (
-      <div className="center">
-        <h1>Starting…</h1>
-      </div>
-    );
+  if (!lab) return <div className="center"><h1>Starting…</h1></div>;
   return <Load lab={lab} count={count} setCount={setCount} />;
 }
 
-function Load({
-  lab,
-  count,
-  setCount,
-}: {
-  lab: LabController;
-  count: number;
-  setCount: (n: number) => void;
-}) {
+function Load({ lab, count, setCount }: { lab: LabController; count: number; setCount: (n: number) => void }) {
   const { tiles, counts } = useLabRoster(lab);
   const wsList = useMemo(() => Array.from({ length: count }, (_, i) => i + 1), [count]);
 
@@ -5177,10 +4260,7 @@ function Load({
       if (!m.success) return;
       void (async () => {
         const answer = await lab.acceptOffer(await decodeWire(m.data.wire));
-        (ev.source as Window | null)?.postMessage(
-          { type: "lab-answer", wire: await encodeWire(answer) },
-          "*",
-        );
+        (ev.source as Window | null)?.postMessage({ type: "lab-answer", wire: await encodeWire(answer) }, "*");
       })();
     };
     window.addEventListener("message", onMsg);
@@ -5191,33 +4271,15 @@ function Load({
     <div>
       <header className="bar">
         <strong>Load test</strong>
-        <label>
-          Students{" "}
-          <input
-            type="number"
-            min={1}
-            max={30}
-            value={count}
-            onChange={(e) => setCount(Number(e.target.value))}
-          />
-        </label>
+        <label>Students <input type="number" min={1} max={30} value={count} onChange={(e) => setCount(Number(e.target.value))} /></label>
         <span style={{ color: "var(--green)" }}>● {counts.connected}</span>
         <span style={{ color: "var(--amber)" }}>● {counts.degraded}</span>
         <span style={{ color: "var(--red)" }}>● {counts.failed + counts.never}</span>
       </header>
-      <main className="grid">
-        {tiles.slice(0, count).map((t) => (
-          <Tile key={t.ws} t={t} onClick={() => {}} />
-        ))}
-      </main>
+      <main className="grid">{tiles.slice(0, count).map((t) => <Tile key={t.ws} t={t} onClick={() => {}} />)}</main>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 4, padding: 12 }}>
         {wsList.map((ws) => (
-          <iframe
-            key={ws}
-            title={`student ${ws}`}
-            src={`${import.meta.env.BASE_URL}student?ws=${ws}&autopair=1`}
-            style={{ width: "100%", height: 120, border: 0, background: "#000" }}
-          />
+          <iframe key={ws} title={`student ${ws}`} src={`${import.meta.env.BASE_URL}student?ws=${ws}&autopair=1`} style={{ width: "100%", height: 120, border: 0, background: "#000" }} />
         ))}
       </div>
     </div>
@@ -5230,7 +4292,6 @@ Note: every iframe shares the same `localStorage` origin, so each student overwr
 - [ ] **Step 3: Route**
 
 In `src/main.tsx`:
-
 ```tsx
 import { LoadPage } from "./ui/dev/LoadPage";
 // inside route():
@@ -5256,18 +4317,15 @@ git commit -m "feat(dev): /dev/load runs 30 auto-pairing student iframes against
 ### Task 14: CI, Pages deploy, README
 
 **Files:**
-
 - Create: `.github/workflows/ci.yml`, `.github/workflows/pages.yml`, `README.md`
 
 **Interfaces:**
-
 - Consumes: package scripts from Task 1.
 - Produces: green CI on PRs; `main` deploys to `https://<owner>.github.io/<repo>/` with `VITE_BASE=/<repo>/` and `VITE_APP_VERSION=<short sha>`.
 
 - [ ] **Step 1: CI workflow**
 
 `.github/workflows/ci.yml`:
-
 ```yaml
 name: ci
 on:
@@ -5299,7 +4357,6 @@ jobs:
 - [ ] **Step 2: Pages workflow**
 
 `.github/workflows/pages.yml`:
-
 ```yaml
 name: pages
 on:
@@ -5342,7 +4399,6 @@ Repository setting required once: Settings → Pages → Source = "GitHub Action
 - [ ] **Step 3: README**
 
 `README.md`:
-
 ```markdown
 # Learning Lab P2P
 
@@ -5353,17 +4409,14 @@ Serverless WebRTC between one teacher MacBook and up to 30 fixed iPads, signaled
 - Lab day checklist: `docs/lab-checklist.md`
 
 ## Routes
-
 `/student?ws=N` · `/teacher` · `/courier` · `/dev/load`
 
 ## Develop
 ```
-
 pnpm install
 pnpm dev
-pnpm test # unit
-pnpm test:e2e # playwright (pnpm exec playwright install --with-deps chromium webkit once)
-
+pnpm test        # unit
+pnpm test:e2e    # playwright (pnpm exec playwright install --with-deps chromium webkit once)
 ```
 
 ## Deploy
@@ -5386,6 +4439,6 @@ git commit -m "ci: lint/typecheck/unit/e2e workflow; pages deploy with base path
 
 ## Self-review notes
 
-- **Spec coverage:** §2 roles/flow → Tasks 9–11; §3 codec (incl. `mid`) → Task 3 + e2e Task 12; §4 state machine/heartbeat/wake lock/transport boundary → Tasks 5–6, 8 (the `SignalingTransport` interface from §4.3 is deliberately _not_ introduced as a class in Phase 1: the boundary is `PeerSession.applyRemote` + the `localPayload` event, which is what a future `GitHubDeadDropTransport` would plug into; add the interface when the second implementation exists rather than speculatively); §5 protocol → Tasks 2, 5, 6; §6 persistence + cert → Tasks 4, 7, 8; §7 UI → Tasks 8–11; §8 testing → Tasks 1–7 (unit), 12 (e2e), 13 (load), lab checklist already exists; §9 layout/deploy → Tasks 1, 11, 14.
+- **Spec coverage:** §2 roles/flow → Tasks 9–11; §3 codec (incl. `mid`) → Task 3 + e2e Task 12; §4 state machine/heartbeat/wake lock/transport boundary → Tasks 5–6, 8 (the `SignalingTransport` interface from §4.3 is deliberately *not* introduced as a class in Phase 1: the boundary is `PeerSession.applyRemote` + the `localPayload` event, which is what a future `GitHubDeadDropTransport` would plug into; add the interface when the second implementation exists rather than speculatively); §5 protocol → Tasks 2, 5, 6; §6 persistence + cert → Tasks 4, 7, 8; §7 UI → Tasks 8–11; §8 testing → Tasks 1–7 (unit), 12 (e2e), 13 (load), lab checklist already exists; §9 layout/deploy → Tasks 1, 11, 14.
 - **Known gap, intentional:** Task 12's "teacher disappearance" test depends on the student's ICE reporting `failed` or the DC closing when the teacher context closes. If a browser keeps the DC in limbo, the student only fails after the default 60 s degraded window; the test allows 45 s. If it flakes, pass shortened student timers via a dev-only `?timers=hb,deg,fail` query param parsed with Zod in `bootStudent` — do that as a follow-up task, not silently.
 - **Type consistency checked:** `SessionState` union, `SdpPayload` field names (`mid` included everywhere), `LabMessage` variants, `RosterView` fields used in `Tile`, `window.__lab.inject` returns `Promise<string | void>` (teacher returns the answer wire; see Tasks 9/10/12 — the teacher hook must `return encodeWire(answer)`).

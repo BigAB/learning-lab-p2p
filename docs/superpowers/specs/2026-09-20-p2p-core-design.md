@@ -2,7 +2,7 @@
 
 **Status:** approved design, pre-implementation
 **Date:** 2026-09-20
-**Scope:** Phase 1 only — QR-signaled WebRTC DataChannel connectivity between one teacher station and up to 30 fixed student iPads, with heartbeat monitoring and re-pair flow. Media (Phase 2+) is designed _for_ but not built.
+**Scope:** Phase 1 only — QR-signaled WebRTC DataChannel connectivity between one teacher station and up to 30 fixed student iPads, with heartbeat monitoring and re-pair flow. Media (Phase 2+) is designed *for* but not built.
 
 ---
 
@@ -12,20 +12,20 @@ A learning lab has 25–30 fixed student workstations (iPads, MDM-managed, fixed
 
 Hard constraints:
 
-| Constraint                                                                | Consequence                                                    |
-| ------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| GitHub Pages only, no server                                              | Signaling must be manual (QR) or GitHub-as-dead-drop (future). |
-| Same LAN, no STUN/TURN                                                    | Host ICE candidates only; gathering is sub-second.             |
-| iPads run WebKit (Safari; Chrome on iOS is also WebKit)                   | No enterprise browser policies; rely on WebKit behaviour.      |
-| Students have no phones during class; setup uses a phone as a **courier** | Every hop of signaling is a QR scan.                           |
-| Setup once per semester; re-pair only on cold start                       | Pairing must be fast per station but need not be zero-touch.   |
+| Constraint | Consequence |
+|---|---|
+| GitHub Pages only, no server | Signaling must be manual (QR) or GitHub-as-dead-drop (future). |
+| Same LAN, no STUN/TURN | Host ICE candidates only; gathering is sub-second. |
+| iPads run WebKit (Safari; Chrome on iOS is also WebKit) | No enterprise browser policies; rely on WebKit behaviour. |
+| Students have no phones during class; setup uses a phone as a **courier** | Every hop of signaling is a QR scan. |
+| Setup once per semester; re-pair only on cold start | Pairing must be fast per station but need not be zero-touch. |
 
 ### 1.1 Decisions made during brainstorming (and why)
 
-1. **Stored SDP cannot be reused for reconnect.** ICE ufrag/pwd and DTLS handshake are bound to the live `RTCPeerConnection`. Any cold start (page reload, crash, power cycle) on either side requires a fresh offer/answer. Transient drops are handled by ICE itself. Therefore: _transient = trust ICE; hard failure = re-pair_. No ICE restart (it also needs an exchange, and our only in-band channel is dead when we'd need it).
+1. **Stored SDP cannot be reused for reconnect.** ICE ufrag/pwd and DTLS handshake are bound to the live `RTCPeerConnection`. Any cold start (page reload, crash, power cycle) on either side requires a fresh offer/answer. Transient drops are handled by ICE itself. Therefore: *transient = trust ICE; hard failure = re-pair*. No ICE restart (it also needs an exchange, and our only in-band channel is dead when we'd need it).
 2. **Phase 1 signaling = QR courier; signaling is a pluggable interface** so a `GitHubDeadDropTransport` (teacher writes SDPs to a repo/gist via API, students poll) can be added later without touching the P2P core. Deferred because it needs token management and makes SDPs semi-public.
 3. **Student is the offerer.** Student page shows its offer QR on load with no teacher action; re-pair is student-initiated and self-serve.
-4. **mDNS candidate obfuscation is avoided by holding camera permission.** WebKit and Chromium emit real host IPs when the origin has media-capture permission. We need the camera for QR scanning anyway, so request it _before_ creating the PC.
+4. **mDNS candidate obfuscation is avoided by holding camera permission.** WebKit and Chromium emit real host IPs when the origin has media-capture permission. We need the camera for QR scanning anyway, so request it *before* creating the PC.
 5. **iPad kiosk = Home Screen web app under MDM Single App Mode**, Auto-Lock Never, plugged in. Standalone web apps are exempt from Safari's 7-day script-storage purge. Screen Wake Lock as belt-and-braces.
 6. **Stack:** Vite + React + TypeScript (strict). Zod at every core boundary. `node:test` for core, Playwright for end-to-end.
 7. **Phase 2 target is bidirectional media** (student→teacher grid + teacher→students). Phase 1 reserves protocol namespaces and builds the DC chunker so Phase 2 renegotiation can carry full SDP over the DataChannel.
@@ -36,15 +36,14 @@ Hard constraints:
 
 One app, three roles selected by pathname:
 
-| Route                       | Device                                 | Lifetime                                        |
-| --------------------------- | -------------------------------------- | ----------------------------------------------- |
-| `/student?ws=N` (N ∈ 1..30) | iPad, Home Screen app, Single App Mode | Always on                                       |
-| `/teacher`                  | MacBook Chrome, persistent tab         | Always on during lab hours                      |
-| `/courier`                  | Any phone browser                      | Transient; holds one payload                    |
-| `/dev/load`                 | Dev only                               | Loads 30 student iframes for local load testing |
+| Route | Device | Lifetime |
+|---|---|---|
+| `/student?ws=N` (N ∈ 1..30) | iPad, Home Screen app, Single App Mode | Always on |
+| `/teacher` | MacBook Chrome, persistent tab | Always on during lab hours |
+| `/courier` | Any phone browser | Transient; holds one payload |
+| `/dev/load` | Dev only | Loads 30 student iframes for local load testing |
 
 ### 2.1 Student startup
-
 1. Read `ws` from URL (fallback: persisted value; conflict → prompt, see §6).
 2. Request `getUserMedia({video:true})` once to obtain permission (stream stopped immediately). Ensures real-IP candidates.
 3. Create `RTCPeerConnection({ certificates:[cert] })` with the persisted DTLS certificate (§6). Create DataChannel `"lab"` (ordered, reliable).
@@ -52,7 +51,6 @@ One app, three roles selected by pathname:
 5. Compress local description (§3) → render QR. State `awaiting-remote`.
 
 ### 2.2 Pairing one workstation — 4 scans
-
 1. Courier scans **student screen** → holds `OFFER ws=N`.
 2. **Teacher station camera** scans courier → dashboard creates `PeerSession(N)`, `setRemoteDescription(offer)`, `createAnswer`, waits gathering complete, shows compressed **answer QR** in the scan modal.
 3. Courier scans **teacher screen** → holds `ANSWER ws=N`.
@@ -61,7 +59,6 @@ One app, three roles selected by pathname:
 Courier displays payload kind + `ws` prominently ("ws 7 · ANSWER → show to iPad 7") to prevent mix-ups while walking the room. Courier holds exactly one payload (batching deferred).
 
 ### 2.3 Cold-start rule
-
 - Student restart → student shows a fresh offer; teacher tile for that `ws` goes red "needs re-pair".
 - Teacher restart → all stations need re-pair; dashboard shows a "Re-pair queue" in `ws` order.
 - Transient network drops never require re-pair (§4).
@@ -73,7 +70,6 @@ Courier displays payload kind + `ws` prominently ("ws 7 · ANSWER → show to iP
 Full SDP (1.5–3 KB) is not QR-friendly. Only fields the peer cannot infer are transmitted.
 
 ### 3.1 Payload
-
 ```ts
 {
   v: 1,
@@ -87,21 +83,17 @@ Full SDP (1.5–3 KB) is not QR-friendly. Only fields the peer cannot infer are 
   cands: Array<{ ip: string; port: number; proto: "udp" }>  // host candidates only; IPv4 + IPv6; link-local excluded
 }
 ```
-
 Encoding: compact JSON → deflate-raw via `CompressionStream` (native, Safari 16.4+/Chromium) → base64url. Wire form: `LAB1:<base64url><crc8-hex>`. Expected 140–220 chars → QR version ≈ 8–11.
 
 ### 3.2 Decode
-
 Reconstruct a full SDP from a fixed template: one `m=application 9 UDP/DTLS/SCTP webrtc-datachannel` section, `a=group:BUNDLE <mid>`, `a=mid:<mid>`, `a=ice-ufrag`, `a=ice-pwd`, `a=fingerprint:sha-256`, `a=setup`, `a=sctp-port:5000`, `a=max-message-size`, host `a=candidate` lines, `a=end-of-candidates`. Feed to `setRemoteDescription`.
 
 The template is validated by Playwright roundtrips WebKit↔Chromium against captured fixtures (§8). Any change to the template requires those tests to pass in both directions.
 
 ### 3.3 Failure mode
-
 CRC mismatch or Zod failure → payload rejected at the boundary; courier flashes red and stays scanning. `setRemoteDescription` rejection → UI shows "Codec error — re-pair" with a copyable diagnostic blob (raw payload, UA, error).
 
 ### 3.4 Scope
-
 The codec is **DataChannel-only, forever**. Phase 2 media renegotiation carries full, uncompressed SDP over the DataChannel (§5) and never touches QR.
 
 ---
@@ -116,33 +108,29 @@ idle → gathering → awaiting-remote → connecting → connected ⇄ degraded
                                         failed ←────────┴─────────┘
 ```
 
-| State             | Entry                                                  | Exit                                                                                          |
-| ----------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `idle`            | constructed                                            | `start()`                                                                                     |
-| `gathering`       | PC created, local description set                      | ICE gathering complete → emit `localPayload`                                                  |
-| `awaiting-remote` | QR shown                                               | `applyRemote(payload)`; no timeout (offer valid while PC alive)                               |
-| `connecting`      | remote set                                             | DC `open` → `connected`; 20 s timeout or ICE `failed` → `failed`                              |
-| `connected`       | DC open, heartbeat started                             | ICE `disconnected` or 15 s heartbeat silence → `degraded`; DC `close`/ICE `failed` → `failed` |
-| `degraded`        | amber; **do nothing**, trust ICE consent checks        | heartbeat resumes → `connected`; > 60 s in degraded → `failed`                                |
-| `failed`          | terminal for this PC; emit `needsRepair`; `close()` PC | student: auto `start()` a new session; teacher: tile red                                      |
+| State | Entry | Exit |
+|---|---|---|
+| `idle` | constructed | `start()` |
+| `gathering` | PC created, local description set | ICE gathering complete → emit `localPayload` |
+| `awaiting-remote` | QR shown | `applyRemote(payload)`; no timeout (offer valid while PC alive) |
+| `connecting` | remote set | DC `open` → `connected`; 20 s timeout or ICE `failed` → `failed` |
+| `connected` | DC open, heartbeat started | ICE `disconnected` or 15 s heartbeat silence → `degraded`; DC `close`/ICE `failed` → `failed` |
+| `degraded` | amber; **do nothing**, trust ICE consent checks | heartbeat resumes → `connected`; > 60 s in degraded → `failed` |
+| `failed` | terminal for this PC; emit `needsRepair`; `close()` PC | student: auto `start()` a new session; teacher: tile red |
 
 ### 4.1 Heartbeat
-
 Every 5 s each side sends `hb {seq, ts}`; receiver replies `hb-ack {seq, ts}`. RTT = now − ts on ack; last 20 RTTs kept for the dashboard. Miss threshold 15 s. All three timers (`heartbeatMs`, `degradedMs`, `failedMs`) come from teacher settings (§6) and are injectable for tests.
 
 ### 4.2 Keep-alive on iPad
-
 `navigator.wakeLock.request("screen")` on load; re-request on `visibilitychange → visible` (locks release when hidden). Single App Mode + Auto-Lock Never via MDM are the primary defence; wake lock is secondary.
 
 ### 4.3 Signaling boundary
-
 ```ts
 interface SignalingTransport {
-  publish(local: SdpPayload): Promise<void>; // render QR / POST to dead-drop
+  publish(local: SdpPayload): Promise<void>;        // render QR / POST to dead-drop
   onRemote(cb: (remote: SdpPayload) => void): () => void;
 }
 ```
-
 Phase 1: `QrCourierTransport` (QR render + camera decode). Future: `GitHubDeadDropTransport`. `PeerSession` depends only on the interface.
 
 ---
@@ -152,22 +140,19 @@ Phase 1: `QrCourierTransport` (QR render + camera decode). Future: `GitHubDeadDr
 Single channel `"lab"`, ordered, reliable, JSON, discriminated on `t`. Envelope `{ t: string; id?: string; ...payload }`, `id` = correlation for request/reply.
 
 ### 5.1 Phase 1 messages
-
-| `t`             | Direction                    | Payload                                         | Purpose                                                                                 |
-| --------------- | ---------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `hello`         | both, first after open       | `{ role, ws, appVersion, ua }`                  | Identify; version mismatch → dashboard warning, no disconnect                           |
-| `hb` / `hb-ack` | both                         | `{ seq, ts }`                                   | Heartbeat / RTT                                                                         |
-| `status`        | student → teacher, on change | `{ battery?, charging?, visibility, wakeLock }` | Dashboard hints ("unplugged", "screen hidden")                                          |
-| `cmd`           | teacher → student            | `{ cmd: "reload" \| "show-id" \| "ping" }`      | Remote actions; `reload` = deliberate re-pair from the desk                             |
-| `chunk`         | both                         | `{ id, i, n, data }`                            | Reassembly frame for messages > 16 KB (Safari DC limit); built now, used by Phase 2 SDP |
+| `t` | Direction | Payload | Purpose |
+|---|---|---|---|
+| `hello` | both, first after open | `{ role, ws, appVersion, ua }` | Identify; version mismatch → dashboard warning, no disconnect |
+| `hb` / `hb-ack` | both | `{ seq, ts }` | Heartbeat / RTT |
+| `status` | student → teacher, on change | `{ battery?, charging?, visibility, wakeLock }` | Dashboard hints ("unplugged", "screen hidden") |
+| `cmd` | teacher → student | `{ cmd: "reload" \| "show-id" \| "ping" }` | Remote actions; `reload` = deliberate re-pair from the desk |
+| `chunk` | both | `{ id, i, n, data }` | Reassembly frame for messages > 16 KB (Safari DC limit); built now, used by Phase 2 SDP |
 
 ### 5.2 Reserved namespaces (typed as empty unions now)
-
 - `media.*` — Phase 2: `media.offer` / `media.answer` (full SDP), `media.request {kind, res}` for per-peer quality bumps.
 - `collab.*` — Phase 3. `rec.*` — Phase 4. `log.*` — Phase 5.
 
 ### 5.3 Rules
-
 - Unknown `t` → ignore and increment a counter; never throw.
 - **Every inbound message is `zod.parse`d before entering core; every outbound message is `zod.parse`d before `send`.** Schemas in `src/schemas/`, TS types via `z.infer`. Core never handles `unknown`.
 - Any message change ships with: schema, valid + invalid fixtures, protocol table update, in the same PR.
@@ -179,15 +164,12 @@ Single channel `"lab"`, ordered, reliable, JSON, discriminated on `t`. Envelope 
 What survives a restart. **Never** SDPs, candidates, or anything connection-scoped.
 
 ### 6.1 Student — `localStorage["lab.student.v1"]`
-
 ```ts
 { ws: number; teacherAppVersion?: string; lastConnectedAt?: number; pairCount: number }
 ```
-
 `ws` from URL on first load, then persisted so the Home Screen app launches without a query string. If URL is present and differs → prompt "This iPad was ws 7, URL says 9 — switch?".
 
 ### 6.2 Teacher — `localStorage["lab.teacher.v1"]`
-
 ```ts
 {
   roster: Record<number, { label?: string; lastConnectedAt?: number; lastRtt?: number;
@@ -195,15 +177,12 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
   settings: { heartbeatMs: 5000; degradedMs: 15000; failedMs: 60000; cameraDeviceId?: string };
 }
 ```
-
 Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state.
 
 ### 6.3 DTLS certificate — IndexedDB
-
 `RTCPeerConnection.generateCertificate({name:"ECDSA", namedCurve:"P-256"})` once per device, stored, passed as `certificates:[cert]`. Gives a stable fingerprint per device so the teacher can confirm "same iPad 7 as last week". Does **not** enable SDP reuse.
 
 ### 6.4 Rules
-
 All reads are Zod-parsed with defaults. Corrupt blob → log, reset to defaults, never crash. `v1` in the key is the migration handle.
 
 ---
@@ -211,7 +190,6 @@ All reads are Zod-parsed with defaults. Corrupt blob → log, reset to defaults,
 ## 7. UI surfaces
 
 ### 7.1 Student (iPad, fullscreen, glanceable from across the room)
-
 - Top status bar: large `ws`, state pill (grey idle / blue waiting / amber degraded / green connected / red re-pair), RTT, `appVersion`.
 - `awaiting-remote`: offer QR centred at ~60 % viewport, "Waiting for teacher", "Show camera" button → camera view to scan courier. Camera opens only on demand.
 - `connected`: QR gone, calm screen, status bar only (Phase 2 content goes here).
@@ -219,18 +197,15 @@ All reads are Zod-parsed with defaults. Corrupt blob → log, reset to defaults,
 - No settings UI; configuration from URL/MDM only.
 
 ### 7.2 Teacher dashboard (Mac, Chrome)
-
 - 5×6 grid of tiles: `ws`, label, state colour, RTT, last seen, battery/plugged icon. Click → detail drawer (state timeline, UA, fingerprint match, `cmd` buttons).
 - Header: green/amber/red counts, `appVersion`, **Scan** → camera modal (external cam by default, `deviceId` remembered). Scanning an offer auto-routes by embedded `ws`; the answer QR appears in the same modal until the teacher taps "Done".
 - Side panel: **Re-pair queue** listing red tiles in `ws` order — the walking route.
 - All rendering via `useLabRoster()`; UI never touches `RTCPeerConnection`.
 
 ### 7.3 Courier (phone, portrait)
-
 Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge QR, "ws 7 · OFFER → show to teacher") → "Done, scan next" → Scan. Payload Zod-validated before holding; bad scan = red flash, stay in Scan.
 
 ### 7.4 Shared
-
 `<Scanner>` wraps `getUserMedia` + `BarcodeDetector` when available (Chromium, Safari 17+), falls back to `jsQR` (Vite import). `<QrView>` renders via `qrcode` package to canvas.
 
 ---
@@ -238,7 +213,6 @@ Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge Q
 ## 8. Testing
 
 ### 8.1 Unit — `node:test` + `tsx`, `src/core/**` and `src/schemas/**` only
-
 - `SdpCodec`: roundtrip on fixture SDPs captured from real Safari and Chrome; CRC catches bit flips; wrong prefix rejected.
 - `PeerSession` vs `FakeRTCPeerConnection` (scriptable ICE/DC events, fake timers): every §4 transition, timeouts, heartbeat miss → degraded → failed, degraded recovery.
 - Schemas: valid/invalid fixtures per message type; unknown `t` ignored.
@@ -246,18 +220,15 @@ Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge Q
 - ESLint `no-restricted-imports` forbids `react`, `react-dom`, DOM globals in `src/core/**`.
 
 ### 8.2 End-to-end — Playwright, Chromium + WebKit
-
 - Two contexts on one machine (student + teacher) P2P over loopback. Camera bypass: test reads `data-payload` attribute from the QR element and injects it into the other context via `page.evaluate` (simulated courier). Assert `connected` + heartbeats.
 - Failure path: close student context → teacher tile degraded → failed within shortened timers; new context re-pairs.
 - Codec through real browsers: WebKit offer → Chromium answer and reverse. Guards the SDP template.
 - One real-scanner test: `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`.
 
 ### 8.3 Manual — `docs/lab-checklist.md`
-
 30-iPad smoke; 10 s WiFi pull → amber → green; 90 s → red → re-pair; teacher tab reload → re-pair all; overnight soak.
 
 ### 8.4 Load — `/dev/load`
-
 Teacher opens 30 student iframes locally, each pairing via injected payloads. Phase 1 verifies 30 PCs + heartbeats on one Mac; Phase 2 adds `canvas.captureStream()` mock video.
 
 ---
@@ -290,14 +261,12 @@ vite.config.ts               # base = process.env.VITE_BASE ?? "/"
 ---
 
 ## 10. Out of scope for Phase 1
-
 Media streams, screen share, chat, recording, analytics, GitHub dead-drop signaling, courier batching, service worker/offline boot, ICE restart.
 
 ## 11. Open risks
-
-| Risk                                                    | Mitigation                                                                                |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Risk | Mitigation |
+|---|---|
 | WebKit changes real-IP-with-camera-permission behaviour | Playwright WebKit e2e will fail; fallback would be dead-drop transport (still no server). |
-| Lab LAN blocks peer-to-peer UDP (client isolation)      | Out of our control; lab-checklist step 1 detects it on day one.                           |
-| iPad suspends page despite Single App Mode              | Wake lock + `status.visibility` reporting exposes it on the dashboard.                    |
-| SDP template drifts from browser expectations           | Fixture roundtrips in both engines on every CI run.                                       |
+| Lab LAN blocks peer-to-peer UDP (client isolation) | Out of our control; lab-checklist step 1 detects it on day one. |
+| iPad suspends page despite Single App Mode | Wake lock + `status.visibility` reporting exposes it on the dashboard. |
+| SDP template drifts from browser expectations | Fixture roundtrips in both engines on every CI run. |
