@@ -40,6 +40,7 @@ export function Scanner({
         } catch {
           /* a bad frame is not an error */
         }
+        if (stop) return;
         if (text && text !== last) {
           last = text;
           onWire(text);
@@ -49,11 +50,22 @@ export function Scanner({
     };
 
     (async () => {
-      stream = await navigator.mediaDevices.getUserMedia({
+      const s = await navigator.mediaDevices.getUserMedia({
         video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "environment" },
       });
-      video.srcObject = stream;
-      await video.play();
+      if (stop) {
+        s.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream = s;
+      video.srcObject = s;
+      try {
+        await video.play();
+      } catch (e) {
+        if (stop) return; // fast unmount aborts play(); that's not a real error
+        throw e;
+      }
+      if (stop) return;
       void loop();
     })().catch((e: unknown) => onError?.(e as Error));
 
