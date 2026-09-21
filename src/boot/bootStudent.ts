@@ -1,4 +1,6 @@
+import { z } from "zod";
 import { realClock } from "../core/clock";
+import type { SessionTimers } from "../core/peerSession";
 import { decodeWire } from "../core/sdpCodec";
 import { StudentController } from "../core/studentController";
 import { WsParamSchema } from "../schemas/ws";
@@ -21,6 +23,27 @@ export function resolveWs(): { urlWs?: number; storedWs?: number } {
   return out;
 }
 
+const TimersParamSchema = z.tuple([
+  z.coerce.number().int().min(200),
+  z.coerce.number().int().min(500),
+  z.coerce.number().int().min(1000),
+]);
+
+/**
+ * Dev-only `?timers=heartbeatMs,degradedMs,failedMs`. The student's shipped defaults (15 s
+ * degraded, 60 s failed) are deliberately patient, which makes "teacher vanished" untestable in
+ * an e2e run; this override exists for that test and is ignored in production builds.
+ */
+function urlTimers(): Partial<SessionTimers> | undefined {
+  if (!import.meta.env.DEV) return undefined;
+  const raw = new URLSearchParams(location.search).get("timers");
+  if (raw === null) return undefined;
+  const parsed = TimersParamSchema.safeParse(raw.split(","));
+  if (!parsed.success) return undefined;
+  const [heartbeatMs, degradedMs, failedMs] = parsed.data;
+  return { heartbeatMs, degradedMs, failedMs };
+}
+
 // StrictMode invokes useState lazy initializers twice on mount, so StudentRoute could otherwise
 // call bootStudent(ws) twice and spawn two controllers/PeerConnections; cache by ws so the second
 // call reuses the in-flight/settled promise instead of booting again.
@@ -37,6 +60,7 @@ export async function bootStudent(ws: number): Promise<StudentController> {
 async function bootStudentUncached(ws: number): Promise<StudentController> {
   await primeCameraPermission(); // real-IP candidates; failure is non-fatal
   const certificates = await loadCertificate();
+  const timers = urlTimers();
   const c = new StudentController(
     {
       rtc: browserRtc,
@@ -48,6 +72,7 @@ async function bootStudentUncached(ws: number): Promise<StudentController> {
       appVersion: APP_VERSION,
       ua: navigator.userAgent,
       ...(certificates ? { certificates } : {}),
+      ...(timers ? { timers } : {}),
       log: (m) => console.warn("[student]", m),
     },
     ws,
