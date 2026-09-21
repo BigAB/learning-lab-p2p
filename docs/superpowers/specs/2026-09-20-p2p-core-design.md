@@ -198,12 +198,12 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
 ### 6.2 Teacher — `localStorage["lab.teacher.v1"]`
 ```ts
 {
-  roster: Record<number, { label?: string; lastConnectedAt?: number; lastRtt?: number;
+  roster: Record<number, { label?: string; lastConnectedAt?: number; lastSeenAt?: number; lastRtt?: number;
                            lastSeenUa?: string; lastFingerprint?: string; pairCount: number }>;
   settings: { heartbeatMs: 5000; degradedMs: 15000; failedMs: 60000; cameraDeviceId?: string };
 }
 ```
-Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastFingerprint` (uppercase colon-separated hex of the offer's sha-256 fingerprint) is compared with the stored value when `acceptOffer` is called, and **written only once that call's answer resolves**: a superseded or blown-up scan never becomes the baseline for the next continuity check. The drawer shows the first 8 bytes of the stored fingerprint whenever one exists, and adds the verdict — "same device as last pairing" or "⚠️ different device than last pairing" — only while the tile has a session this run (state ≠ `never`), because the verdict is a claim about the current pairing.
+Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastConnectedAt` is the pairing time; `lastSeenAt` is the last inbound frame of any kind (`PeerSession` emits `inbound` for every schema-valid frame). The live value updates on every frame and is what the tile shows; it is persisted at most once a minute per station, plus immediately on `degraded`/`failed`, so a teacher-tab reload still shows when a red tile was last heard from. `lastSeenAt` is optional and additive, so the `v1` key stands. `lastFingerprint` (uppercase colon-separated hex of the offer's sha-256 fingerprint) is compared with the stored value when `acceptOffer` is called, and **written only once that call's answer resolves**: a superseded or blown-up scan never becomes the baseline for the next continuity check. The drawer shows the first 8 bytes of the stored fingerprint whenever one exists, and adds the verdict — "same device as last pairing" or "⚠️ different device than last pairing" — only while the tile has a session this run (state ≠ `never`), because the verdict is a claim about the current pairing.
 
 ### 6.3 DTLS certificate — IndexedDB
 `RTCPeerConnection.generateCertificate({name:"ECDSA", namedCurve:"P-256"})` once per device, stored, passed as `certificates:[cert]`. Gives a stable fingerprint per device so the teacher can confirm "same iPad 7 as last week". Does **not** enable SDP reuse.
@@ -223,7 +223,7 @@ All reads are Zod-parsed with defaults. Corrupt blob → log, reset to defaults,
 - No settings UI; configuration from URL/MDM only.
 
 ### 7.2 Teacher dashboard (Mac, Chrome)
-- 5×6 grid of tiles: `ws`, label, state colour, RTT, last seen, battery/plugged icon. Click → detail drawer (state timeline, UA, DTLS fingerprint + continuity verdict, `cmd` buttons). The timeline survives re-pairs, so the drawer still shows how the previous session died.
+- 5×6 grid of tiles: `ws`, label, state colour, RTT, last seen (`lastSeenAt`, falling back to `lastConnectedAt` for a station never heard from this run), battery/plugged icon. Click → detail drawer (state timeline, UA, DTLS fingerprint + continuity verdict, `cmd` buttons). The timeline survives re-pairs, so the drawer still shows how the previous session died.
 - Header: green/amber/red counts, `appVersion`, **Scan** → camera modal (external cam by default, `deviceId` remembered). Scanning an offer auto-routes by embedded `ws`; the answer QR appears in the same modal until the teacher taps "Done".
 - Side panel: **Re-pair queue** listing red tiles in `ws` order — the walking route.
 - All rendering via `useLabRoster()`; UI never touches `RTCPeerConnection`.

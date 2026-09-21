@@ -291,3 +291,56 @@ test("a superseded acceptOffer never writes its fingerprint", async () => {
     "compared against the last pairing that actually answered, not the abandoned scan",
   );
 });
+
+test("lastSeenAt tracks the latest inbound frame; lastConnectedAt stays the pairing time", async () => {
+  const ctx = make();
+  const { dc } = await pair(ctx, 5);
+  const paired = ctx.lab.snapshot()[4]!;
+  assert.equal(paired.lastSeenAt, paired.lastConnectedAt, "nothing heard yet beyond the handshake");
+  ctx.clock.advance(7000);
+  dc.receive(JSON.stringify({ t: "hb-ack", seq: 1, ts: 0 }));
+  const tile = ctx.lab.snapshot()[4]!;
+  assert.equal(tile.lastSeenAt, 7000);
+  assert.equal(tile.lastConnectedAt, paired.lastConnectedAt);
+  ctx.clock.advance(1000);
+  ctx.lab.sendCmd(5, "ping");
+  assert.equal(ctx.lab.snapshot()[4]!.lastSeenAt, 7000, "outbound traffic is not 'seen'");
+});
+
+test("lastSeenAt is persisted at most once a minute while chatty, and on degraded/failed", async () => {
+  const ctx = make();
+  const { dc } = await pair(ctx, 6);
+  const stored = () =>
+    (JSON.parse(ctx.kv.get(TEACHER_KEY)!) as { roster: Record<string, { lastSeenAt?: number }> })
+      .roster["6"]?.lastSeenAt;
+  const hb = () => dc.receive(JSON.stringify({ t: "hb-ack", seq: 1, ts: 0 }));
+  assert.equal(stored(), 0, "pairing itself records a sighting");
+  for (let i = 0; i < 11; i++) {
+    ctx.clock.advance(5000);
+    hb();
+  }
+  assert.equal(stored(), 0, "55 s of heartbeats: no write yet");
+  assert.equal(ctx.lab.snapshot()[5]!.lastSeenAt, 55_000, "the live value is always current");
+  ctx.clock.advance(5000);
+  hb();
+  assert.equal(stored(), 60_000, "first write once a minute has passed");
+  ctx.clock.advance(5000);
+  hb();
+  assert.equal(stored(), 60_000, "then quiet again");
+
+  // Silence: the miss check runs on the 5 s tick and needs > degradedMs, so 20 s → degraded.
+  ctx.clock.advance(20_000);
+  assert.equal(ctx.lab.snapshot()[5]!.state, "degraded");
+  assert.equal(stored(), 65_000, "degraded persists the last sighting");
+});
+
+test("a never-paired tile reports the persisted lastSeenAt from an earlier run", () => {
+  const rtc = new FakeRtcFactory();
+  const kv = new MemoryKv();
+  kv.set(
+    TEACHER_KEY,
+    JSON.stringify({ roster: { "9": { pairCount: 1, lastSeenAt: 1234, lastConnectedAt: 1000 } } }),
+  );
+  const lab = new LabController({ rtc, clock: new FakeClock(), kv, appVersion: "v1", ua: "mac" });
+  assert.equal(lab.snapshot()[8]!.lastSeenAt, 1234);
+});

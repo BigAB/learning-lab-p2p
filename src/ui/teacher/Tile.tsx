@@ -28,7 +28,7 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
       <div className="meta">{t.label ?? "—"}</div>
       <div className="meta">
         {t.rtt !== undefined && <span data-rtt>{t.rtt} ms · </span>}
-        <span>seen {ago(t.lastConnectedAt)}</span>
+        <span data-seen>seen {ago(t.lastSeenAt ?? t.lastConnectedAt)}</span>
       </div>
       <div className="meta">
         {t.battery !== undefined && (

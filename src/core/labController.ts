@@ -29,7 +29,10 @@ export interface RosterView {
   state: SessionState | "never";
   rtt?: number;
   label?: string;
+  /** When this pairing's handshake completed (persisted). */
   lastConnectedAt?: number;
+  /** When we last heard *anything* from the station: live while a session exists, else persisted. */
+  lastSeenAt?: number;
   lastSeenUa?: string;
   battery?: number;
   charging?: boolean;
@@ -45,6 +48,9 @@ export interface RosterView {
 }
 
 interface Live {
+  lastSeenAt?: number;
+  /** Clock time of the last persisted lastSeenAt; gates the once-a-minute write. */
+  seenPersistedAt?: number;
   battery?: number;
   charging?: boolean;
   visibility?: Visibility;
@@ -63,6 +69,13 @@ export class SupersededError extends Error {
 
 const ALL_WS = Array.from({ length: WS_MAX - WS_MIN + 1 }, (_, i) => WS_MIN + i);
 const HISTORY_CAP = 50;
+/**
+ * A heartbeat lands every 5 s from up to 30 stations; persisting lastSeenAt on each would be a
+ * localStorage write every 170 ms for nothing. Once a minute per station keeps a teacher-tab
+ * reload honest to within a minute, and degraded/failed transitions write immediately because
+ * "when did we lose it" is exactly the number the dashboard then needs.
+ */
+const SEEN_PERSIST_MS = 60_000;
 
 /** Raw sha-256 fingerprint bytes → the `AA:BB:…` form the browser and the drawer both show. */
 function hexFingerprint(fp: Uint8Array): string {
@@ -204,6 +217,8 @@ export class LabController extends Emitter<LabEvents> {
       if (s?.lastRtt !== undefined) view.rtt = s.lastRtt;
       if (e?.label !== undefined) view.label = e.label;
       if (e?.lastConnectedAt !== undefined) view.lastConnectedAt = e.lastConnectedAt;
+      const seen = l?.lastSeenAt ?? e?.lastSeenAt;
+      if (seen !== undefined) view.lastSeenAt = seen;
       if (e?.lastSeenUa !== undefined) view.lastSeenUa = e.lastSeenUa;
       if (l?.battery !== undefined) view.battery = l.battery;
       if (l?.charging !== undefined) view.charging = l.charging;
@@ -239,11 +254,26 @@ export class LabController extends Emitter<LabEvents> {
       // degraded is the same pairing continuing, not a new one.
       if (st === "connected" && prev === "connecting") {
         const e = this.entry(ws);
-        e.lastConnectedAt = this.env.clock.now();
+        const now = this.env.clock.now();
+        e.lastConnectedAt = now;
         e.pairCount += 1;
+        this.markSeen(ws, now, true);
+        this.persist();
+      }
+      // The last sighting before we lost them is the number the tile needs now; write it.
+      if ((st === "degraded" || st === "failed") && l?.lastSeenAt !== undefined) {
+        this.markSeen(ws, l.lastSeenAt, true);
         this.persist();
       }
       this.changed();
+    });
+    s.on("inbound", () => {
+      const now = this.env.clock.now();
+      const l = this.live.get(ws);
+      const due = l?.seenPersistedAt === undefined || now - l.seenPersistedAt >= SEEN_PERSIST_MS;
+      this.markSeen(ws, now, due);
+      if (due) this.persist();
+      else this.changed();
     });
     s.on("hello", (h) => {
       const e = this.entry(ws);
@@ -268,6 +298,16 @@ export class LabController extends Emitter<LabEvents> {
       this.changed();
     });
     s.on("needsRepair", (reason) => this.env.log?.(`ws ${ws} failed: ${reason}`));
+  }
+
+  /** Update the live sighting; `persist` also copies it into the roster entry (caller saves). */
+  private markSeen(ws: number, at: number, persist: boolean): void {
+    const l = this.live.get(ws);
+    if (l) l.lastSeenAt = at;
+    if (persist) {
+      this.entry(ws).lastSeenAt = at;
+      if (l) l.seenPersistedAt = at;
+    }
   }
 
   private entry(ws: number) {
