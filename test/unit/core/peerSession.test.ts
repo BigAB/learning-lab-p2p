@@ -325,6 +325,19 @@ test("stale pc/dc events after close() are inert", async () => {
   assert.equal(s.ignoredCount, ignoredBefore);
 });
 
+test("close() mid-gathering settles the pending start() promise", async () => {
+  const { s } = student();
+  let repairs = 0;
+  s.on("needsRepair", () => repairs++);
+  const p = s.start();
+  await flush();
+  assert.equal(s.state, "gathering");
+  s.close();
+  await p;
+  assert.equal(s.state, "failed");
+  assert.equal(repairs, 0);
+});
+
 test("close() during gathering clears the gather fallback timer", async () => {
   const { clock, s } = student();
   const states: SessionState[] = [];

@@ -68,6 +68,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   private connectTimer: TimerHandle | undefined;
   private degradedTimer: TimerHandle | undefined;
   private gatherTimer: TimerHandle | undefined;
+  private gatherResolve: (() => void) | undefined;
   private done = false;
 
   constructor(private readonly opts: PeerSessionOpts) {
@@ -146,9 +147,11 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   private waitGathering(pc: RTCPeerConnection): Promise<void> {
     return new Promise((resolve) => {
       if (pc.iceGatheringState === "complete") return resolve();
+      this.gatherResolve = resolve;
       this.gatherTimer = this.opts.clock.setTimeout(() => {
         this.gatherTimer = undefined;
         pc.onicegatheringstatechange = null;
+        this.gatherResolve = undefined;
         resolve();
       }, this.timers.gatherMs);
       pc.onicegatheringstatechange = () => {
@@ -158,6 +161,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
             this.gatherTimer = undefined;
           }
           pc.onicegatheringstatechange = null;
+          this.gatherResolve = undefined;
           resolve();
         }
       };
@@ -285,6 +289,10 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
     this.degradedTimer = undefined;
     if (this.gatherTimer !== undefined) this.opts.clock.clearTimeout(this.gatherTimer);
     this.gatherTimer = undefined;
+    if (this.gatherResolve) {
+      this.gatherResolve();
+      this.gatherResolve = undefined;
+    }
     this.hb?.stop();
     this.hb = null;
     if (this.dc) {
