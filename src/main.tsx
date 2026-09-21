@@ -1,10 +1,12 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { bootStudent, resolveWs } from "./boot/bootStudent";
+import { bootTeacher } from "./boot/bootTeacher";
 import type { StudentController } from "./core/studentController";
 import { HomePage } from "./ui/HomePage";
 import { StudentApp } from "./ui/student/StudentApp";
 import { WsConflict } from "./ui/student/WsConflict";
+import { TeacherApp } from "./ui/teacher/TeacherApp";
 import "./ui/shared/styles.css";
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -45,6 +47,8 @@ function route() {
   switch (path) {
     case "/student":
       return <StudentRoute />;
+    case "/teacher":
+      return <TeacherApp boot={bootTeacher()} />;
     default:
       return <HomePage />;
   }
