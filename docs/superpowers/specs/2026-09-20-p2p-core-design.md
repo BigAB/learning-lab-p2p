@@ -41,7 +41,9 @@ One app, three roles selected by pathname:
 | `/student?ws=N` (N ∈ 1..30) | iPad, Home Screen app, Single App Mode | Always on |
 | `/teacher` | MacBook Chrome, persistent tab | Always on during lab hours |
 | `/courier` | Any phone browser | Transient; holds one payload |
-| `/dev/load` | Dev only | Loads 30 student iframes for local load testing |
+| `/dev/load` | Dev only | Loads student iframes for local load testing; **route exists only in dev builds** |
+
+Dev-only surfaces — `/dev/load`, `window.__lab` (e2e injection hook), `window.__labCodec`, the `?timers=` watchdog override and the iframe `autopair` bridge — are all behind `import.meta.env.DEV`. A production bundle contains none of them (`grep -c '__lab\b\|lab-offer\|lab-answer\|dev/load' dist/assets/*.js` → 0); Playwright runs against `pnpm dev`, so e2e still has them.
 
 ### 2.1 Student startup
 1. Read `ws` from URL (fallback: persisted value; conflict → prompt, see §6).
@@ -55,6 +57,8 @@ One app, three roles selected by pathname:
 2. **Teacher station camera** scans courier → dashboard creates `PeerSession(N)`, `setRemoteDescription(offer)`, `createAnswer`, waits gathering complete, shows compressed **answer QR** in the scan modal.
 3. Courier scans **teacher screen** → holds `ANSWER ws=N`.
 4. Student taps "Show camera", **iPad camera** scans courier → `setRemoteDescription(answer)` → ICE → DC open → `connected`.
+
+The student rejects an answer whose `ws` is not its own ("This code is for workstation 9, not 7") before touching the PC and stays in `awaiting-remote`, so a courier mix-up costs one rescan rather than a dead session. A rejected scan also resets the scanner's duplicate filter, so holding the same QR up again retries.
 
 Courier displays payload kind + `ws` prominently ("ws 7 · ANSWER → show to iPad 7") to prevent mix-ups while walking the room. Courier holds exactly one payload (batching deferred).
 
@@ -80,18 +84,24 @@ Full SDP (1.5–3 KB) is not QR-friendly. Only fields the peer cannot infer are 
   pwd: string,
   fp: Uint8Array,                   // sha-256 fingerprint, 32 raw bytes
   setup: "actpass" | "active" | "passive",
-  cands: Array<{ ip: string; port: number; proto: "udp" }>  // host candidates only; IPv4 + IPv6; link-local excluded
+  cands: Array<{ ip: string; port: number; proto: "udp" }>  // host candidates only; IPv4 + IPv6; link-local and mDNS excluded
 }
 ```
-Encoding: compact JSON → deflate-raw via `CompressionStream` (native, Safari 16.4+/Chromium) → base64url. Wire form: `LAB1:<base64url><crc8-hex>`. Expected 140–220 chars → QR version ≈ 8–11.
+Encoding: compact JSON → deflate-raw via `CompressionStream` (native, Safari 16.4+/Chromium) → base64url. Wire form: `LAB1:<base64url><crc8-hex>`. **Measured: 233 chars for a 2-candidate Chrome offer** (201 for one candidate) → QR version ≈ 11–13; the e2e codec roundtrip asserts < 300 chars in both engines.
+
+**Charsets are validated, not just lengths.** Every field below is interpolated into the rebuilt SDP, so a CRLF smuggled through a QR would inject session attributes: `ip` must match `/^[0-9A-Fa-f:.]+$/` (IPv4/IPv6 literal, so an mDNS name cannot pass), `ufrag`/`pwd` `/^[A-Za-z0-9+/\-_=]+$/`, `mid` `/^[A-Za-z0-9_\-]+$/`. The rules apply to both the full and the compact schema.
 
 ### 3.2 Decode
 Reconstruct a full SDP from a fixed template: one `m=application 9 UDP/DTLS/SCTP webrtc-datachannel` section, `a=group:BUNDLE <mid>`, `a=mid:<mid>`, `a=ice-ufrag`, `a=ice-pwd`, `a=fingerprint:sha-256`, `a=setup`, `a=sctp-port:5000`, `a=max-message-size`, host `a=candidate` lines, `a=end-of-candidates`. Feed to `setRemoteDescription`.
 
 The template is validated by Playwright roundtrips WebKit↔Chromium against captured fixtures (§8). Any change to the template requires those tests to pass in both directions.
 
+**mDNS candidates are refused at extraction.** A `<uuid>.local` host candidate means the origin never got the camera grant (§1.1.4) and the peer would have to resolve it over multicast DNS the lab LAN may not carry. Such candidates are skipped; if nothing with a literal IP remains, extraction throws `CodecError("only mDNS candidates found — camera permission missing, cannot pair")` rather than producing a payload that can never connect.
+
 ### 3.3 Failure mode
-CRC mismatch or Zod failure → payload rejected at the boundary; courier flashes red and stays scanning. `setRemoteDescription` rejection → UI shows "Codec error — re-pair" with a copyable diagnostic blob (raw payload, UA, error).
+CRC mismatch or Zod failure → payload rejected at the boundary; courier flashes red and stays scanning. `setRemoteDescription` rejection → UI shows the error message (student: a toast; teacher: inline in the scan modal).
+
+The **copyable diagnostic blob** (raw payload + UA + error) is descoped to a Phase 1.5 follow-up. Current behaviour is a plain message, which is what the lab actually needs mid-pairing; the blob only pays off once someone is triaging remotely.
 
 ### 3.4 Scope
 The codec is **DataChannel-only, forever**. Phase 2 media renegotiation carries full, uncompressed SDP over the DataChannel (§5) and never touches QR.
@@ -118,8 +128,22 @@ idle → gathering → awaiting-remote → connecting → connected ⇄ degraded
 | `degraded` | amber; **do nothing**, trust ICE consent checks | heartbeat resumes → `connected`; > 60 s in degraded → `failed` |
 | `failed` | terminal for this PC; emit `needsRepair`; `close()` PC | student: auto `start()` a new session; teacher: tile red |
 
+`gathering` can also end in `failed`: a DC or PC error while gathering (or a `close()` from a superseding scan) tears the session down without ever emitting `localPayload`.
+
+**Timers** (all injectable, §6.2 for the persisted three):
+
+| Timer | Default | Meaning |
+|---|---|---|
+| `gatherMs` | 3 s | Fallback: proceed with whatever candidates we have if `iceGatheringState` never reaches `complete` |
+| `connectMs` | 20 s | `connecting` → `failed` if the DataChannel never opens |
+| `heartbeatMs` | 5 s | `hb` interval |
+| `degradedMs` | 15 s | heartbeat silence → `degraded` |
+| `failedMs` | 60 s | time in `degraded` → `failed` |
+
+**`start()` rejection → the controller respawns with backoff.** If the student's `start()` rejects (no usable candidate, codec refusal), `StudentController` logs it, `close()`s the dead session, drops it, emits `error` with the message (rendered under "Starting…") and respawns after `restartDelayMs * 2^attempt`, capped at 30 s. `attempt` resets when a session reaches `connected`; `stop()` cancels a pending respawn. Without this the kiosk sits on "Starting…" forever with no session and no QR.
+
 ### 4.1 Heartbeat
-Every 5 s each side sends `hb {seq, ts}`; receiver replies `hb-ack {seq, ts}`. RTT = now − ts on ack; last 20 RTTs kept for the dashboard. Miss threshold 15 s. All three timers (`heartbeatMs`, `degradedMs`, `failedMs`) come from teacher settings (§6) and are injectable for tests.
+Every 5 s each side sends `hb {seq, ts}`; receiver replies `hb-ack {seq, ts}`. RTT = now − ts on ack; the **last RTT is kept per session** (`PeerSession.lastRtt`, mirrored into the roster) — the dashboard shows a current number, not a series. Miss threshold 15 s. All three timers (`heartbeatMs`, `degradedMs`, `failedMs`) come from teacher settings (§6) and are injectable for tests.
 
 ### 4.2 Keep-alive on iPad
 `navigator.wakeLock.request("screen")` on load; re-request on `visibilitychange → visible` (locks release when hidden). Single App Mode + Auto-Lock Never via MDM are the primary defence; wake lock is secondary.
@@ -167,7 +191,9 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
 ```ts
 { ws: number; teacherAppVersion?: string; lastConnectedAt?: number; pairCount: number }
 ```
-`ws` from URL on first load, then persisted so the Home Screen app launches without a query string. If URL is present and differs → prompt "This iPad was ws 7, URL says 9 — switch?".
+`ws` from URL on first load, then persisted so the Home Screen app launches without a query string. If URL is present and differs → prompt "This iPad was ws 7, URL says 9 — switch?". If `?ws=` is present but *invalid*, the page says so ("Invalid ?ws in URL — using saved workstation N", or an explanation on the dead-end screen) instead of falling back silently.
+
+`pairCount` counts **pairings** — `connecting → connected` transitions — not recoveries: an ICE blip that goes `degraded → connected` is the same pairing continuing.
 
 ### 6.2 Teacher — `localStorage["lab.teacher.v1"]`
 ```ts
@@ -177,7 +203,7 @@ What survives a restart. **Never** SDPs, candidates, or anything connection-scop
   settings: { heartbeatMs: 5000; degradedMs: 15000; failedMs: 60000; cameraDeviceId?: string };
 }
 ```
-Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state.
+Roster is dashboard metadata ("last seen", labels like "Row 2 seat 3"), not connection state. `pairCount` has the same `connecting → connected` meaning as §6.1. `lastFingerprint` **is written** on every `acceptOffer` (uppercase colon-separated hex of the offer's sha-256 fingerprint) and compared with the stored value first: the drawer shows the first 8 bytes with "same device as last pairing" or "⚠️ different device than last pairing".
 
 ### 6.3 DTLS certificate — IndexedDB
 `RTCPeerConnection.generateCertificate({name:"ECDSA", namedCurve:"P-256"})` once per device, stored, passed as `certificates:[cert]`. Gives a stable fingerprint per device so the teacher can confirm "same iPad 7 as last week". Does **not** enable SDP reuse.
@@ -197,12 +223,14 @@ All reads are Zod-parsed with defaults. Corrupt blob → log, reset to defaults,
 - No settings UI; configuration from URL/MDM only.
 
 ### 7.2 Teacher dashboard (Mac, Chrome)
-- 5×6 grid of tiles: `ws`, label, state colour, RTT, last seen, battery/plugged icon. Click → detail drawer (state timeline, UA, fingerprint match, `cmd` buttons).
+- 5×6 grid of tiles: `ws`, label, state colour, RTT, last seen, battery/plugged icon. Click → detail drawer (state timeline, UA, DTLS fingerprint + continuity verdict, `cmd` buttons). The timeline survives re-pairs, so the drawer still shows how the previous session died.
 - Header: green/amber/red counts, `appVersion`, **Scan** → camera modal (external cam by default, `deviceId` remembered). Scanning an offer auto-routes by embedded `ws`; the answer QR appears in the same modal until the teacher taps "Done".
 - Side panel: **Re-pair queue** listing red tiles in `ws` order — the walking route.
 - All rendering via `useLabRoster()`; UI never touches `RTCPeerConnection`.
 
 ### 7.3 Courier (phone, portrait)
+
+The manifest declares `orientation: "any"`, not `portrait`: the iPads are landscape-mounted and the courier phone is portrait, and one manifest serves both. Icons: `icon.svg` plus a 180×180 `apple-touch-icon.png` (generated by `pnpm icon`), because iOS ignores SVG icons for Home Screen web apps.
 Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge QR, "ws 7 · OFFER → show to teacher") → "Done, scan next" → Scan. Payload Zod-validated before holding; bad scan = red flash, stay in Scan.
 
 ### 7.4 Shared
@@ -222,14 +250,14 @@ Three states: **Scan** (full-screen camera, auto-detect) → **Holding** (huge Q
 ### 8.2 End-to-end — Playwright, Chromium + WebKit
 - Two contexts on one machine (student + teacher) P2P over loopback. Camera bypass: test reads `data-payload` attribute from the QR element and injects it into the other context via `page.evaluate` (simulated courier). Assert `connected` + heartbeats.
 - Failure path: close student context → teacher tile degraded → failed within shortened timers; new context re-pairs.
-- Codec through real browsers: WebKit offer → Chromium answer and reverse. Guards the SDP template.
-- One real-scanner test: `--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`.
+- Codec through real browsers: the roundtrip spec (`codec.spec.ts`) runs **per engine** — Chromium and WebKit each extract → encode → decode → rebuild → `setRemoteDescription` in both directions within their own engine. A single cross-process WebKit-offer → Chromium-answer handoff is a follow-up.
+- One real-scanner test (`--use-fake-device-for-media-stream --use-file-for-fake-video-capture=<qr.y4m>`) is a **follow-up**, not Phase 1: the suite bypasses the camera through the `data-payload` attribute instead.
 
 ### 8.3 Manual — `docs/lab-checklist.md`
 30-iPad smoke; 10 s WiFi pull → amber → green; 90 s → red → re-pair; teacher tab reload → re-pair all; overnight soak.
 
 ### 8.4 Load — `/dev/load`
-Teacher opens 30 student iframes locally, each pairing via injected payloads. Phase 1 verifies 30 PCs + heartbeats on one Mac; Phase 2 adds `canvas.captureStream()` mock video.
+Teacher opens N student iframes locally, each pairing via `postMessage` (same-origin checked). CI runs **5** iframes to keep the run honest on a shared runner; 30 is the manual check on the Mac. Phase 2 adds `canvas.captureStream()` mock video.
 
 ---
 
@@ -246,6 +274,8 @@ src/
   ui/          # React: student/, teacher/, courier/, shared/
   hooks/       # usePeerSession, useLabRoster — sole bridge core↔React
   main.tsx     # pathname router: /student /teacher /courier /dev/load
+scripts/
+  make-icon.mjs              # pnpm icon → public/apple-touch-icon.png
 test/
   unit/  e2e/  fixtures/sdp/
 .github/workflows/ci.yml     # lint, typecheck, unit, playwright
@@ -254,7 +284,8 @@ vite.config.ts               # base = process.env.VITE_BASE ?? "/"
 ```
 
 - **Routing:** pathname switch in `main.tsx`, no router lib. Pages SPA fallback: `404.html` copy of `index.html`.
-- **PWA:** `manifest.webmanifest` (standalone, portrait, icons). **No service worker in Phase 1** (SW caching + kiosk + hot fixes is a footgun).
+- **PWA:** `manifest.webmanifest` (standalone, `orientation: "any"`, `icon.svg` + `apple-touch-icon.png` 180×180). **No service worker in Phase 1** (SW caching + kiosk + hot fixes is a footgun).
+- **Dev-only code:** `/dev/load`, `window.__lab`, `window.__labCodec`, `?timers=` and `autopair` are gated on `import.meta.env.DEV` and absent from the deployed bundle (§2).
 - **Tooling:** pnpm, strict TS, ESLint + Prettier, Conventional Commits.
 - **Deploy:** push `main` → GitHub Pages. `VITE_BASE` derived from `GITHUB_REPOSITORY` in the workflow. `appVersion` = short git SHA baked in at build; shown on student bar and teacher header so version skew is visible.
 
