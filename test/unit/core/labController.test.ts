@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LabController } from "../../../src/core/labController";
+import { LabController, SupersededError } from "../../../src/core/labController";
 import { extractPayload } from "../../../src/core/sdpCodec";
 import { TEACHER_KEY } from "../../../src/schemas/storage";
 import { FakeClock } from "../helpers/fakeClock";
@@ -139,9 +139,72 @@ test("acceptOffer twice back-to-back before gathering completes: first settles, 
     flush().then(() => "timeout"),
   ]);
   assert.equal(settled, "settled");
+  await assert.rejects(p1, SupersededError);
   ctx.rtc.last().completeGathering();
   const answer = await p2;
   assert.equal(answer.ws, 2);
+});
+
+test("setLabel rejects an over-long label without mutating the roster", () => {
+  const ctx = make();
+  const ok = ctx.lab.setLabel(4, "x".repeat(65));
+  assert.equal(ok, false);
+  assert.equal(ctx.lab.snapshot()[3]?.label, undefined);
+});
+
+test("updateSettings rejects an invalid patch without mutating settings", () => {
+  const ctx = make();
+  const before = ctx.lab.settings;
+  const ok = ctx.lab.updateSettings({ heartbeatMs: 100 });
+  assert.equal(ok, false);
+  assert.deepEqual(ctx.lab.settings, before);
+});
+
+test("persist never throws even if the KeyValueStore.set throws", () => {
+  const lab = new LabController({
+    rtc: new FakeRtcFactory(),
+    clock: new FakeClock(),
+    kv: {
+      get: () => null,
+      set: () => {
+        throw new Error("quota exceeded");
+      },
+      remove: () => {},
+    },
+    appVersion: "v1",
+    ua: "mac",
+  });
+  const ok = lab.setLabel(4, "Row 1 seat 4");
+  assert.equal(ok, true);
+  assert.equal(lab.snapshot()[3]?.label, "Row 1 seat 4");
+});
+
+test("pairCount counts pairings, not ICE recoveries", async () => {
+  const ctx = make();
+  await pair(ctx, 1);
+  const pc = ctx.rtc.last();
+  pc.setIce("disconnected");
+  pc.setIce("connected");
+  assert.equal(ctx.lab.snapshot()[0]?.state, "connected");
+  const saved = JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
+    roster: Record<string, { pairCount: number }>;
+  };
+  assert.equal(saved.roster["1"]?.pairCount, 1);
+});
+
+test("history is capped at 50 entries; snapshot() returns a fresh copy each time", async () => {
+  const ctx = make();
+  await pair(ctx, 1);
+  const pc = ctx.rtc.last();
+  for (let i = 0; i < 30; i++) {
+    pc.setIce("disconnected");
+    pc.setIce("connected");
+  }
+  const tile = ctx.lab.snapshot()[0]!;
+  assert.equal(tile.history.length, 50);
+  const a = ctx.lab.snapshot()[0]!.history;
+  const b = ctx.lab.snapshot()[0]!.history;
+  assert.notEqual(a, b);
 });
 
 test("counts", async () => {

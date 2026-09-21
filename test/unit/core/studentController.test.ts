@@ -144,3 +144,57 @@ test("stop closes the session and does not respawn", async () => {
   await flush();
   assert.equal(ctx.rtc.pcs.length, 1);
 });
+
+test("start() is idempotent while a session is live", async () => {
+  const ctx = make();
+  const sessions: unknown[] = [];
+  ctx.c.on("session", (s) => sessions.push(s));
+  ctx.c.start();
+  ctx.c.start();
+  await flush();
+  assert.equal(sessions.length, 1);
+  assert.equal(ctx.wakeLock.requests, 1);
+  assert.equal(ctx.rtc.pcs.length, 1);
+});
+
+test("pairCount counts pairings, not ICE recoveries", async () => {
+  const ctx = make();
+  await bringUp(ctx);
+  const pc = ctx.rtc.last();
+  pc.setIce("disconnected");
+  pc.setIce("connected");
+  assert.equal(ctx.c.session?.state, "connected");
+  const saved = JSON.parse(ctx.kv.get(STUDENT_KEY)!) as { pairCount: number };
+  assert.equal(saved.pairCount, 1);
+});
+
+test("persist never throws even if the KeyValueStore.set throws", async () => {
+  const rtc = new FakeRtcFactory();
+  const clock = new FakeClock();
+  const device = new FakeDevice();
+  const wakeLock = new FakeWakeLock();
+  const c = new StudentController(
+    {
+      rtc,
+      clock,
+      device,
+      wakeLock,
+      reload: () => {},
+      appVersion: "v1",
+      ua: "ipad",
+      kv: {
+        get: () => null,
+        set: () => {
+          throw new Error("quota exceeded");
+        },
+        remove: () => {},
+      },
+    },
+    7,
+  );
+  assert.doesNotThrow(() => {
+    c.start();
+  });
+  await flush();
+  assert.equal(c.session?.state, "gathering");
+});

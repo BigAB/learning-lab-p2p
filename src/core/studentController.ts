@@ -67,6 +67,7 @@ export class StudentController extends Emitter<StudentEvents> {
   }
 
   start(): void {
+    if (this.session) return;
     this.stopped = false;
     this.offVisibility = this.env.device.onVisibility((v) => {
       if (v === "visible") void this.acquireWakeLock();
@@ -108,11 +109,15 @@ export class StudentController extends Emitter<StudentEvents> {
       ...(this.env.timers ? { timers: this.env.timers } : {}),
       ...(this.env.certificates ? { certificates: this.env.certificates } : {}),
     });
-    s.on("state", (st) => {
+    s.on("state", (st, prev) => {
       if (st === "connected") {
-        this.state.lastConnectedAt = this.env.clock.now();
-        this.state.pairCount += 1;
-        this.persist();
+        // Only a fresh handshake (connecting → connected) counts as a pairing; recovering from
+        // degraded is the same pairing continuing, not a new one.
+        if (prev === "connecting") {
+          this.state.lastConnectedAt = this.env.clock.now();
+          this.state.pairCount += 1;
+          this.persist();
+        }
         void this.pushStatus();
       }
     });
@@ -149,7 +154,11 @@ export class StudentController extends Emitter<StudentEvents> {
   }
 
   private persist(): void {
-    saveState(this.env.kv, STUDENT_KEY, StudentStateSchema, this.state);
+    try {
+      saveState(this.env.kv, STUDENT_KEY, StudentStateSchema, this.state);
+    } catch (e) {
+      this.env.log?.(`persist failed: ${(e as Error).message}`);
+    }
     this.emit("state", this.state);
   }
 }

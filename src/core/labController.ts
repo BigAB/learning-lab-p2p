@@ -1,7 +1,12 @@
 import type { CmdMessage } from "../schemas/protocol";
 import type { SdpPayload } from "../schemas/sdpPayload";
 import type { Settings, TeacherState } from "../schemas/storage";
-import { TEACHER_KEY, TeacherStateSchema } from "../schemas/storage";
+import {
+  RosterEntrySchema,
+  SettingsSchema,
+  TEACHER_KEY,
+  TeacherStateSchema,
+} from "../schemas/storage";
 import { WS_MAX, WS_MIN } from "../schemas/ws";
 import type { Clock } from "./clock";
 import { Emitter } from "./events";
@@ -46,7 +51,13 @@ interface Live {
 
 export type LabEvents = { change: [] };
 
+/** Rejects a superseded acceptOffer(): a same-ws re-scan closed this session before it answered. */
+export class SupersededError extends Error {
+  override name = "SupersededError";
+}
+
 const ALL_WS = Array.from({ length: WS_MAX - WS_MIN + 1 }, (_, i) => WS_MIN + i);
+const HISTORY_CAP = 50;
 
 /** Teacher side: up to 30 PeerSessions, persisted roster metadata, repair queue. */
 export class LabController extends Emitter<LabEvents> {
@@ -69,15 +80,29 @@ export class LabController extends Emitter<LabEvents> {
     return this.state.settings;
   }
 
-  updateSettings(patch: Partial<Settings>): void {
-    this.state.settings = { ...this.state.settings, ...patch };
+  /** Validates the merged settings before applying. Returns false (unchanged) on invalid input. */
+  updateSettings(patch: Partial<Settings>): boolean {
+    const merged = { ...this.state.settings, ...patch };
+    const r = SettingsSchema.safeParse(merged);
+    if (!r.success) {
+      this.env.log?.(`updateSettings: invalid (${r.error.issues[0]?.message ?? "?"})`);
+      return false;
+    }
+    this.state.settings = r.data;
     this.persist();
+    return true;
   }
 
-  setLabel(ws: number, label: string): void {
-    const e = this.entry(ws);
-    e.label = label;
+  /** Validates the label before applying. Returns false (unchanged) on invalid input. */
+  setLabel(ws: number, label: string): boolean {
+    const r = RosterEntrySchema.shape.label.safeParse(label);
+    if (!r.success) {
+      this.env.log?.(`setLabel: invalid (${r.error.issues[0]?.message ?? "?"})`);
+      return false;
+    }
+    this.entry(ws).label = label;
     this.persist();
+    return true;
   }
 
   /** Accept a student's offer; resolves with our answer payload once ICE gathering completes. */
@@ -110,7 +135,7 @@ export class LabController extends Emitter<LabEvents> {
       const offState = s.on("state", (st) => {
         if (st === "failed") {
           cleanup();
-          reject(new Error("session closed before an answer was produced"));
+          reject(new SupersededError("session closed before an answer was produced"));
         }
       });
       function cleanup(): void {
@@ -148,7 +173,7 @@ export class LabController extends Emitter<LabEvents> {
         state: s?.state ?? "never",
         versionMismatch:
           l?.remoteAppVersion !== undefined && l.remoteAppVersion !== this.env.appVersion,
-        history: l?.history ?? [],
+        history: l ? [...l.history] : [],
       };
       if (s?.lastRtt !== undefined) view.rtt = s.lastRtt;
       if (e?.label !== undefined) view.label = e.label;
@@ -178,9 +203,15 @@ export class LabController extends Emitter<LabEvents> {
 
   private wire(s: PeerSession): void {
     const ws = s.ws;
-    s.on("state", (st) => {
-      this.live.get(ws)?.history.push({ at: this.env.clock.now(), state: st });
-      if (st === "connected") {
+    s.on("state", (st, prev) => {
+      const l = this.live.get(ws);
+      if (l) {
+        l.history.push({ at: this.env.clock.now(), state: st });
+        if (l.history.length > HISTORY_CAP) l.history.splice(0, l.history.length - HISTORY_CAP);
+      }
+      // Only a fresh handshake (connecting → connected) counts as a pairing; recovering from
+      // degraded is the same pairing continuing, not a new one.
+      if (st === "connected" && prev === "connecting") {
         const e = this.entry(ws);
         e.lastConnectedAt = this.env.clock.now();
         e.pairCount += 1;
@@ -219,7 +250,11 @@ export class LabController extends Emitter<LabEvents> {
   }
 
   private persist(): void {
-    saveState(this.env.kv, TEACHER_KEY, TeacherStateSchema, this.state);
+    try {
+      saveState(this.env.kv, TEACHER_KEY, TeacherStateSchema, this.state);
+    } catch (e) {
+      this.env.log?.(`persist failed: ${(e as Error).message}`);
+    }
     this.changed();
   }
 
