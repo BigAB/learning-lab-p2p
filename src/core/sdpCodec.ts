@@ -2,7 +2,9 @@ import type { Candidate, CompactPayload, SdpPayload } from "../schemas/sdpPayloa
 import { CompactPayloadSchema, SdpPayloadSchema } from "../schemas/sdpPayload";
 import { crc8, deflateRaw, fromBase64Url, inflateRaw, toBase64Url } from "./bytes";
 
-export const WIRE_PREFIX = "LAB1:";
+export const WIRE_PREFIX = "LAB2:";
+/** Phase 1 wire prefix, recognised only so a mixed-version pair gets a useful error. */
+export const LEGACY_WIRE_PREFIX = "LAB1:";
 
 export class CodecError extends Error {
   override name = "CodecError";
@@ -12,7 +14,7 @@ const LINK_LOCAL = /^(169\.254\.|fe80:)/i;
 const MDNS = /\.local$/i;
 const CANDIDATE = /^a=candidate:\S+ 1 udp \d+ (\S+) (\d+) typ host/i;
 
-export function extractPayload(sdp: string, role: "offer" | "answer", ws: number): SdpPayload {
+export function extractPayload(sdp: string, role: "offer" | "answer", ws: string): SdpPayload {
   const lines = sdp.split(/\r?\n/);
   const attr = (name: string) =>
     lines.find((l) => l.startsWith(`a=${name}:`))?.slice(name.length + 3);
@@ -67,7 +69,7 @@ export function extractPayload(sdp: string, role: "offer" | "answer", ws: number
     }
     throw new CodecError("no host candidates in sdp");
   }
-  const result = SdpPayloadSchema.safeParse({ v: 1, role, ws, mid, ufrag, pwd, fp, setup, cands });
+  const result = SdpPayloadSchema.safeParse({ v: 2, role, ws, mid, ufrag, pwd, fp, setup, cands });
   if (!result.success) {
     throw new CodecError(`sdp: ${result.error.issues[0]?.message ?? "invalid"}`);
   }
@@ -106,7 +108,7 @@ export function buildSdp(p: SdpPayload): string {
 
 export function toCompact(p: SdpPayload): CompactPayload {
   return CompactPayloadSchema.parse({
-    v: 1,
+    v: 2,
     r: p.role === "offer" ? "o" : "a",
     w: p.ws,
     m: p.mid,
@@ -120,7 +122,7 @@ export function toCompact(p: SdpPayload): CompactPayload {
 
 export function fromCompact(c: CompactPayload): SdpPayload {
   return SdpPayloadSchema.parse({
-    v: 1,
+    v: 2,
     role: c.r === "o" ? "offer" : "answer",
     ws: c.w,
     mid: c.m,
@@ -139,7 +141,10 @@ export async function encodeWire(p: SdpPayload): Promise<string> {
 }
 
 export async function decodeWire(wire: string): Promise<SdpPayload> {
-  if (!wire.startsWith(WIRE_PREFIX)) throw new CodecError("not a LAB1 payload");
+  if (wire.startsWith(LEGACY_WIRE_PREFIX)) {
+    throw new CodecError("this is a LAB1 code — the other device is running an older version");
+  }
+  if (!wire.startsWith(WIRE_PREFIX)) throw new CodecError("not a LAB2 payload");
   const body = wire.slice(WIRE_PREFIX.length);
   if (body.length < 4) throw new CodecError("payload too short");
   const crcHex = body.slice(-2);

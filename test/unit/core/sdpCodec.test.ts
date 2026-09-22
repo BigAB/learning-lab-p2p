@@ -21,9 +21,9 @@ const safariAnswer = readFileSync(
 );
 
 test("extracts ice/dtls and host candidates, dropping link-local and duplicates", () => {
-  const p = extractPayload(chromeOffer, "offer", 7);
+  const p = extractPayload(chromeOffer, "offer", "7");
   assert.equal(p.role, "offer");
-  assert.equal(p.ws, 7);
+  assert.equal(p.ws, "7");
   assert.equal(p.mid, "0");
   assert.equal(p.ufrag, "kJ3q");
   assert.equal(p.pwd, "Yl6wO9zZ0z3XZ7RlN4CkO0Ul");
@@ -37,13 +37,13 @@ test("extracts ice/dtls and host candidates, dropping link-local and duplicates"
 });
 
 test("Safari answer: uppercase UDP, fe80 dropped, setup active", () => {
-  const p = extractPayload(safariAnswer, "answer", 7);
+  const p = extractPayload(safariAnswer, "answer", "7");
   assert.equal(p.setup, "active");
   assert.deepEqual(p.cands, [{ ip: "10.0.0.15", port: 61234, proto: "udp" }]);
 });
 
 test("buildSdp emits a single application m-section with all attributes", () => {
-  const sdp = buildSdp(extractPayload(chromeOffer, "offer", 7));
+  const sdp = buildSdp(extractPayload(chromeOffer, "offer", "7"));
   const lines = sdp.split("\r\n");
   assert.equal(lines.filter((l) => l.startsWith("m=")).length, 1);
   assert.ok(lines.includes("m=application 9 UDP/DTLS/SCTP webrtc-datachannel"));
@@ -58,13 +58,13 @@ test("buildSdp emits a single application m-section with all attributes", () => 
 });
 
 test("extract(build(extract(x))) is stable", () => {
-  const p1 = extractPayload(chromeOffer, "offer", 7);
-  const p2 = extractPayload(buildSdp(p1), "offer", 7);
+  const p1 = extractPayload(chromeOffer, "offer", "7");
+  const p2 = extractPayload(buildSdp(p1), "offer", "7");
   assert.deepEqual({ ...p2, fp: [...p2.fp] }, { ...p1, fp: [...p1.fp] });
 });
 
 test("wire roundtrip, prefix, size budget", async () => {
-  const p = extractPayload(chromeOffer, "offer", 7);
+  const p = extractPayload(chromeOffer, "offer", "7");
   const wire = await encodeWire(p);
   assert.ok(wire.startsWith(WIRE_PREFIX));
   assert.ok(wire.length < 260, `wire too long: ${wire.length}`);
@@ -73,7 +73,7 @@ test("wire roundtrip, prefix, size budget", async () => {
 });
 
 test("decodeWire rejects bad prefix, bad crc, garbage", async () => {
-  const wire = await encodeWire(extractPayload(chromeOffer, "offer", 7));
+  const wire = await encodeWire(extractPayload(chromeOffer, "offer", "7"));
   await assert.rejects(decodeWire("NOPE:" + wire.slice(5)), CodecError);
   const flipped = wire.slice(0, -2) + (wire.endsWith("00") ? "01" : "00");
   await assert.rejects(decodeWire(flipped), CodecError);
@@ -82,7 +82,7 @@ test("decodeWire rejects bad prefix, bad crc, garbage", async () => {
 
 test("extractPayload throws on missing attributes", () => {
   assert.throws(() =>
-    extractPayload("v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n", "offer", 1),
+    extractPayload("v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n", "offer", "1"),
   );
 });
 
@@ -102,14 +102,14 @@ test("extractPayload throws CodecError when only candidate is link-local", () =>
     "a=setup:actpass",
     "a=mid:0",
   ].join("\r\n");
-  assert.throws(() => extractPayload(sdp, "offer", 7), CodecError);
+  assert.throws(() => extractPayload(sdp, "offer", "7"), CodecError);
 });
 
 test("decodeWire rejects a non-base64url compact fingerprint without leaking a raw error", async () => {
   const compact = {
-    v: 1,
+    v: 2,
     r: "o",
-    w: 7,
+    w: "7",
     m: "0",
     u: "kJ3q",
     p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
@@ -143,7 +143,7 @@ function sdpWith(cands: [string, number][]): string {
 
 test("mDNS-only SDP is refused with the camera-permission message", () => {
   const sdp = sdpWith([["8f2a1b3c-4d5e-6f70-8192-a3b4c5d6e7f8.local", 54321]]);
-  assert.throws(() => extractPayload(sdp, "offer", 7), {
+  assert.throws(() => extractPayload(sdp, "offer", "7"), {
     name: "CodecError",
     message: /only mDNS candidates found — camera permission missing/,
   });
@@ -154,7 +154,7 @@ test("mDNS candidates are skipped when a literal IP is also offered", () => {
     ["8f2a1b3c-4d5e-6f70-8192-a3b4c5d6e7f8.local", 54321],
     ["192.168.1.42", 54322],
   ]);
-  assert.deepEqual(extractPayload(sdp, "offer", 7).cands, [
+  assert.deepEqual(extractPayload(sdp, "offer", "7").cands, [
     { ip: "192.168.1.42", port: 54322, proto: "udp" },
   ]);
 });
@@ -165,7 +165,7 @@ test("link-local-only SDP names link-local, never blames camera permission", () 
     ["fe80::1", 54322],
   ]);
   assert.throws(
-    () => extractPayload(sdp, "offer", 7),
+    () => extractPayload(sdp, "offer", "7"),
     (e: unknown) => {
       assert.ok(e instanceof CodecError);
       assert.match(e.message, /link-local/);
@@ -177,7 +177,7 @@ test("link-local-only SDP names link-local, never blames camera permission", () 
 
 test("SDP with no host candidates at all says so", () => {
   assert.throws(
-    () => extractPayload(sdpWith([]), "offer", 7),
+    () => extractPayload(sdpWith([]), "offer", "7"),
     (e: unknown) => {
       assert.ok(e instanceof CodecError);
       assert.match(e.message, /no host candidates/);
@@ -192,8 +192,28 @@ test("mDNS plus link-local and nothing else still points at camera permission", 
     ["8f2a1b3c-4d5e-6f70-8192-a3b4c5d6e7f8.local", 54321],
     ["169.254.10.5", 54322],
   ]);
-  assert.throws(() => extractPayload(sdp, "offer", 7), {
+  assert.throws(() => extractPayload(sdp, "offer", "7"), {
     name: "CodecError",
     message: /only mDNS candidates found — camera permission missing/,
   });
+});
+
+test("a LAB1 code is refused with a version message, not a schema error", async () => {
+  await assert.rejects(decodeWire("LAB1:abcd00"), {
+    name: "CodecError",
+    message: /this is a LAB1 code — the other device is running an older version/,
+  });
+  await assert.rejects(decodeWire("NOPE:abcd00"), {
+    name: "CodecError",
+    message: /not a LAB2 payload/,
+  });
+});
+
+test("a 24-character ID survives the roundtrip and stays inside the QR budget", async () => {
+  const id = "Back Row Left Seat 12345"; // exactly 24 characters
+  assert.equal(id.length, 24);
+  const wire = await encodeWire(extractPayload(chromeOffer, "offer", id));
+  assert.ok(wire.startsWith("LAB2:"));
+  assert.ok(wire.length < 300, `wire too long: ${wire.length}`);
+  assert.equal((await decodeWire(wire)).ws, id);
 });
