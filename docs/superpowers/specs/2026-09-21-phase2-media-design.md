@@ -241,7 +241,7 @@ Keeping this out of `PeerSession` keeps the Phase 1 state machine and its 40-odd
 - Stats: while any link is `ready` and (Cameras on or broadcasting), poll `getStats()` every `statsMs` (2 s, injectable) per link, off the `change` path; aggregate `cpuLimited` count and per-station inbound fps/height into `RosterView.media`.
 - On each link's `ready`: apply broadcast track + profile, send `media.broadcast`, send the station's current `media.request`.
 - A link only counts as ready to push/pull media while its session is `connected` or `degraded`; a `failed` session's link is never read, so `snapshot()` reports `media.state: "none"` for it even though `MediaLink.close()` never flips `.state` off `"ready"`.
-- `RosterView.media: { state: MediaState; reason?: string; cam: "off" | "on" | "error"; send: Profile | null; track?: MediaStreamTrack; inFps?: number; inHeight?: number; outCpuLimited?: boolean; encoder?: string }`.
+- `RosterView.media: { state: MediaState; reason?: string; cam: CamState; send: Profile | null; track?: MediaStreamTrack; stats?: MediaStatsView }`, where `MediaStatsView: { cpuLimited: boolean; encoder?: string; outFps?: number; outHeight?: number; inFps?: number; inHeight?: number; framesDecoded?: number; framesDropped?: number }`.
 
 ### 7.4 `StudentController` additions
 - Owns `MediaPort`; on `session.media.request` → `applyRequest`; emits `media` view changes.

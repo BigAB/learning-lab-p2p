@@ -35,6 +35,7 @@ Run before the first lab day of a semester and after any app deploy, iPad OS upd
 - [ ] **Share screen** → every iPad shows it; text on a terminal window is legible. **Stop sharing** → every iPad back to Ready.
 - [ ] **Share camera** → every iPad shows the teacher. Header shows "⚠ N CPU-limited" only transiently; if it stays > 0, note N and the Mac's Activity Monitor CPU.
 - [ ] Cameras off → every iPad's "● Camera on" pill disappears.
+- [ ] **Cameras** is a persisted setting: leave it off at the end of the day, or every iPad turns its camera on as soon as it pairs tomorrow.
 
 ## 4. Soak
 - [ ] Leave every station connected overnight. Next morning: count greens, note any `status.visibility: hidden` or wake-lock-lost events in tile drawers.
