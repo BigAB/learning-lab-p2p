@@ -3,7 +3,14 @@ import assert from "node:assert/strict";
 import { PeerSession, type SessionState } from "../../../src/core/peerSession";
 import { extractPayload } from "../../../src/core/sdpCodec";
 import { FakeClock } from "../helpers/fakeClock";
-import { FakeRtcFactory, CHROME_OFFER, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
+import {
+  FakeRtcFactory,
+  CHROME_OFFER,
+  SAFARI_ANSWER,
+  flush,
+  CHROME_MEDIA_OFFER,
+} from "../helpers/fakeRtc";
+import type { MediaLink } from "../../../src/core/mediaLink";
 
 const TIMERS = {
   heartbeatMs: 5000,
@@ -452,4 +459,90 @@ test("inbound fires for every valid frame from the peer, never for refused ones"
   dc.receive("not json");
   dc.receive(JSON.stringify({ t: "evil" }));
   assert.equal(inbound, 4, "garbage is not proof of anything");
+});
+
+function studentWithCaps() {
+  const rtc = new FakeRtcFactory();
+  const clock = new FakeClock();
+  const s = new PeerSession({
+    role: "student",
+    ws: "7",
+    rtc,
+    clock,
+    timers: TIMERS,
+    appVersion: "t1",
+    ua: "test",
+    caps: ["media"],
+  });
+  return { rtc, clock, s };
+}
+
+async function connectedWithCaps() {
+  const ctx = studentWithCaps();
+  const links: MediaLink[] = [];
+  const order: string[] = [];
+  ctx.s.on("media", (l) => {
+    links.push(l);
+    order.push("media");
+  });
+  ctx.s.on("state", (st) => order.push(st));
+  const p = ctx.s.start();
+  await flush();
+  ctx.rtc.last().completeGathering();
+  await p;
+  await ctx.s.applyRemote(answerPayload);
+  const dc = ctx.rtc.last().channels[0]!;
+  dc.open();
+  return { ...ctx, dc, links, order };
+}
+
+test("hello carries caps when given, and omits it otherwise", async () => {
+  const { dc } = await connectedWithCaps();
+  const hello = dc.sentJson()[0] as { t: string; caps?: string[] };
+  assert.deepEqual(hello.caps, ["media"]);
+  const plain = await connectedStudent();
+  assert.equal("caps" in (plain.dc.sentJson()[0] as object), false);
+});
+
+test("a MediaLink exists from DC open, emitted before connected, closed on teardown", async () => {
+  const { s, dc, links, order } = await connectedWithCaps();
+  assert.equal(links.length, 1);
+  assert.equal(s.media, links[0]);
+  assert.deepEqual(order.slice(-2), ["media", "connected"]);
+  assert.equal(s.media?.state, "none");
+  dc.close();
+  assert.equal(s.state, "failed");
+  // close() is idempotent; a closed link ignores handle() — prove it by routing an offer.
+  s.media?.handle({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER });
+  await flush();
+  assert.equal(s.media?.state, "none");
+});
+
+test("media.* frames route to the link and are not re-emitted as message", async () => {
+  const { s, dc } = await connectedWithCaps();
+  const messages: string[] = [];
+  s.on("message", (m) => messages.push(m.t));
+  const requests: unknown[] = [];
+  s.media!.on("request", (r) => requests.push(r));
+  dc.receive(JSON.stringify({ t: "media.request", send: null }));
+  dc.receive(JSON.stringify({ t: "cmd", cmd: "ping" }));
+  assert.deepEqual(requests, [null]);
+  assert.deepEqual(messages, ["cmd"]);
+});
+
+test("a media.answer arriving at the student counts as ignored", async () => {
+  const { s, dc } = await connectedWithCaps();
+  const before = s.ignoredCount;
+  dc.receive(JSON.stringify({ t: "media.answer", seq: 1, sdp: "v=0" }));
+  assert.equal(s.ignoredCount, before + 1);
+});
+
+test("student answers a media.offer received over the channel", async () => {
+  const { s, dc } = await connectedWithCaps();
+  dc.receive(JSON.stringify({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER }));
+  await flush();
+  assert.equal(s.media?.state, "ready");
+  const answer = dc.sentJson().find((m) => (m as { t: string }).t === "media.answer") as
+    { seq: number } | undefined;
+  assert.equal(answer?.seq, 1);
 });
