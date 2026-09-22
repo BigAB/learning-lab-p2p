@@ -310,3 +310,10 @@ Small, agreed, not yet scheduled. Each ships with its own tests when picked up.
 | Heartbeat silence is detected on the 5 s tick with a strict `>` compare, so `degraded` lands at **20 s** after the last frame, not the documented 15 s | `Heartbeat.tick()` | Change to `>=` (15 s exactly) or document 20 s; the unit test for `lastSeenAt` persistence currently encodes the 20 s behaviour. |
 | Copyable diagnostic blob (raw payload + UA + error) on codec/`setRemoteDescription` failure | §3.3 | Phase 1.5; pays off only when triaging remotely. |
 | Cross-process WebKit-offer → Chromium-answer codec handoff | §8.2 | Today each engine round-trips within itself. |
+| Roster entry is created and persisted at `acceptOffer`, before the pairing is confirmed | `LabController.acceptOffer` | A scan on a broken LAN leaves a permanent `never` tile until removed. Consider deferring entry creation to the answer, as `lastFingerprint` already is. |
+| `counts()` walks `snapshot()`, which deep-copies every station's history; `useLabRoster` calls both per `change` | `LabController.counts` | Iterate `orderedKeys()` and read session state directly. Pre-existing cost, now cheap to fix. |
+| `TeacherApp.open` is not cleared when the open tile disappears from the roster | `TeacherApp.tsx` | Unreachable today (only the drawer removes); a future removal path would re-open the drawer when that key re-pairs. |
+| `releaseStudent()` rethrows if the cached boot promise rejected; caller uses `void` | `bootStudent.ts` | Unreachable today (a failed boot has no "change" button); add a `.catch`. |
+| Compact QR schema lacks a direct "rejects a bad `w`" unit test | `sdpPayload.test.ts` | Same `WsSchema` as the full payload, so risk ≈ 0; spec §8 of the IDs amendment names it. |
+| `TileDrawer` acknowledges `replaced` keyed on `t.ws` (display) rather than `t.key` | `TileDrawer.tsx` | Idempotent either way; `t.key` is the stable handle. |
+| `migrateTeacherV1` silently merges two v1 keys that case-fold to one `wsKey` | `migrations.ts` | Unreachable with real v1 data (numeric keys); illegal keys are now skipped with a log. |
