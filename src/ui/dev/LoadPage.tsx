@@ -28,7 +28,7 @@ function Load({
   count: number;
   setCount: (n: number) => void;
 }) {
-  const { tiles, counts, settings, broadcast, media } = useLabRoster(lab);
+  const { tiles, counts, settings, broadcast, media, focused } = useLabRoster(lab);
   const wsList = useMemo(() => Array.from({ length: count }, (_, i) => String(i + 1)), [count]);
 
   useEffect(() => {
@@ -115,7 +115,12 @@ function Load({
       </header>
       <main className="grid">
         {tiles.slice(0, count).map((t) => (
-          <Tile key={t.key} t={t} onClick={() => {}} onFocus={() => lab.focus(t.ws)} />
+          <Tile
+            key={t.key}
+            t={t}
+            onClick={() => {}}
+            onFocus={() => lab.focus(focused === t.key ? null : t.ws)}
+          />
         ))}
       </main>
       <table data-stats className="meta" style={{ margin: 12, borderCollapse: "collapse" }}>
