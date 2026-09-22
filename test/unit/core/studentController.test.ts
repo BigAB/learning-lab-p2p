@@ -7,7 +7,14 @@ import { LEGACY_STUDENT_KEY } from "../../../src/schemas/legacy";
 import { FakeClock } from "../helpers/fakeClock";
 import { FakeDevice, FakeWakeLock } from "../helpers/fakeDevice";
 import { MemoryKv } from "../helpers/memoryKv";
-import { FakeRtcFactory, LINK_LOCAL_ONLY_OFFER, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
+import {
+  FakeRtcFactory,
+  LINK_LOCAL_ONLY_OFFER,
+  SAFARI_ANSWER,
+  CHROME_MEDIA_OFFER,
+  flush,
+} from "../helpers/fakeRtc";
+import { FakeMediaPort } from "../helpers/fakeMedia";
 
 const answer = extractPayload(SAFARI_ANSWER, "answer", "7");
 
@@ -17,6 +24,7 @@ function make(ws = "7", offerSdp?: string) {
   const kv = new MemoryKv();
   const device = new FakeDevice();
   const wakeLock = new FakeWakeLock();
+  const media = new FakeMediaPort();
   let reloads = 0;
   const c = new StudentController(
     {
@@ -25,6 +33,7 @@ function make(ws = "7", offerSdp?: string) {
       kv,
       device,
       wakeLock,
+      media,
       reload: () => reloads++,
       appVersion: "v1",
       ua: "ipad",
@@ -32,7 +41,7 @@ function make(ws = "7", offerSdp?: string) {
     },
     ws,
   );
-  return { rtc, clock, kv, device, wakeLock, c, reloads: () => reloads };
+  return { rtc, clock, kv, device, wakeLock, media, c, reloads: () => reloads };
 }
 
 async function bringUp(ctx: ReturnType<typeof make>) {
@@ -180,6 +189,7 @@ test("persist never throws even if the KeyValueStore.set throws", async () => {
       clock,
       device,
       wakeLock,
+      media: new FakeMediaPort(),
       reload: () => {},
       appVersion: "v1",
       ua: "ipad",
@@ -287,6 +297,7 @@ test("a v1 blob is migrated on first boot and removed; pairCount survives", () =
       kv,
       device: new FakeDevice(),
       wakeLock: new FakeWakeLock(),
+      media: new FakeMediaPort(),
       reload: () => {},
       appVersion: "v1",
       ua: "ipad",
@@ -310,6 +321,7 @@ test("when v2 exists, v1 is ignored and removed", () => {
       kv,
       device: new FakeDevice(),
       wakeLock: new FakeWakeLock(),
+      media: new FakeMediaPort(),
       reload: () => {},
       appVersion: "v1",
       ua: "ipad",
@@ -318,4 +330,69 @@ test("when v2 exists, v1 is ignored and removed", () => {
   );
   assert.equal(c.state.pairCount, 1);
   assert.equal(kv.get(LEGACY_STUDENT_KEY), null);
+});
+
+const thumb = { height: 180, fps: 10, kbps: 150 };
+
+async function bringUpMedia(ctx: ReturnType<typeof make>) {
+  const dc = await bringUp(ctx);
+  dc.receive(JSON.stringify({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER }));
+  await flush();
+  return dc;
+}
+
+test("hello advertises the media capability", async () => {
+  const ctx = make();
+  const dc = await bringUp(ctx);
+  assert.deepEqual((dc.sentJson()[0] as { caps?: string[] }).caps, ["media"]);
+});
+
+test("media view: none → ready with the teacher's track; broadcast state follows messages", async () => {
+  const ctx = make();
+  const views: unknown[] = [];
+  ctx.c.on("media", (v) => views.push(v));
+  assert.equal(ctx.c.mediaView().state, "none");
+  const dc = await bringUpMedia(ctx);
+  const v = ctx.c.mediaView();
+  assert.equal(v.state, "ready");
+  assert.ok(v.teacherTrack);
+  assert.deepEqual(v.broadcast, { on: false });
+  dc.receive(JSON.stringify({ t: "media.broadcast", on: true, source: "screen" }));
+  assert.deepEqual(ctx.c.mediaView().broadcast, { on: true, source: "screen" });
+  assert.ok(views.length >= 2);
+});
+
+test("media.request thumb → camera captured, status sent, view says cam on", async () => {
+  const ctx = make();
+  const dc = await bringUpMedia(ctx);
+  dc.receive(JSON.stringify({ t: "media.request", send: thumb }));
+  await flush();
+  await flush();
+  assert.equal(ctx.media.cameraCalls.length, 1);
+  assert.deepEqual(dc.sentJson().at(-1), { t: "media.status", cam: "on", send: thumb });
+  assert.equal(ctx.c.mediaView().cam, "on");
+  assert.deepEqual(ctx.c.mediaView().send, thumb);
+});
+
+test("session failure stops the camera; the next session starts from media none", async () => {
+  const ctx = make();
+  const dc = await bringUpMedia(ctx);
+  dc.receive(JSON.stringify({ t: "media.request", send: thumb }));
+  await flush();
+  await flush();
+  const track = ctx.media.last();
+  dc.close();
+  assert.equal(track.stopped, true);
+  assert.equal(ctx.c.mediaView().state, "none");
+  assert.equal(ctx.c.mediaView().cam, "off");
+});
+
+test("stop() stops the camera", async () => {
+  const ctx = make();
+  const dc = await bringUpMedia(ctx);
+  dc.receive(JSON.stringify({ t: "media.request", send: thumb }));
+  await flush();
+  await flush();
+  ctx.c.stop();
+  assert.equal(ctx.media.last().stopped, true);
 });
