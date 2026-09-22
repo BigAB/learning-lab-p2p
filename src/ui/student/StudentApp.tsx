@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StudentController } from "../../core/studentController";
 import { decodeWire } from "../../core/sdpCodec";
@@ -155,7 +156,11 @@ function StudentView({
           )}
         </main>
       )}
-      {showId && <div className="overlay-id">{c.ws}</div>}
+      {showId && (
+        <div className="overlay-id" style={{ "--id-len": c.ws.length } as CSSProperties}>
+          {c.ws}
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

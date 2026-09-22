@@ -68,6 +68,30 @@ test("an invalid ?ws with nothing saved shows the entry with a notice", async ({
   await ctx.close();
 });
 
+test("a long typed ID stays inside the status bar on an iPad-width viewport", async ({
+  browser,
+}) => {
+  const ctx = await browser.newContext({
+    permissions: ["camera"],
+    viewport: { width: 768, height: 1024 },
+  });
+  const page = await ctx.newPage();
+  // A single 24-char token (the legal max, no spaces to wrap at) is the worst case: it stresses
+  // overflow-wrap rather than the browser's free word-wrapping.
+  const id = "BackRowLeftSeatNumberXXX";
+  await page.goto(`/student?ws=${id}`);
+  await expect(page.locator(".bar .ws")).toHaveText(id);
+  const barBox = (await page.locator(".bar").boundingBox())!;
+  const wsBox = (await page.locator(".bar .ws").boundingBox())!;
+  expect(barBox.width).toBeLessThanOrEqual(768);
+  expect(wsBox.width).toBeLessThanOrEqual(768);
+  // The un-breakable token must not force the whole bar wider than the viewport — that pushes
+  // the status pill/version off-screen even though each element's own box still reports <= 768.
+  const overflow = await page.locator(".bar").evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await ctx.close();
+});
+
 test("manifest has no start_url, so iOS keeps the URL the app was added from", async ({
   request,
 }) => {
