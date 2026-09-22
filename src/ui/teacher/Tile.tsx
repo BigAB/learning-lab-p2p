@@ -55,9 +55,19 @@ export function Tile({
         className="thumb"
         data-media-state={m.state}
         data-cam={m.cam}
+        // The thumbnail is the focus control; the rest of the tile opens the drawer. It is only
+        // a control (focusable, button role) while there is a live picture to focus.
+        role={live ? "button" : undefined}
+        tabIndex={live ? 0 : undefined}
+        aria-label={live ? `Focus ${t.ws}` : undefined}
         onClick={(e) => {
-          // The thumbnail is the focus control; the rest of the tile opens the drawer.
           if (!live) return;
+          e.stopPropagation();
+          onFocus();
+        }}
+        onKeyDown={(e) => {
+          if (!live || (e.key !== "Enter" && e.key !== " ")) return;
+          e.preventDefault();
           e.stopPropagation();
           onFocus();
         }}
