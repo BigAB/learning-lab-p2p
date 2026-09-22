@@ -714,3 +714,62 @@ test("remove() clears focus and a fresh pairing starts with media none", async (
   assert.equal(tile(ctx, "A").media.state, "none");
   assert.equal(tile(ctx, "A").media.cam, "off");
 });
+
+test("a session (not just its link) failing is treated as media-none: stats stop for it, and the poll clears entirely once nobody is left ready", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  const b = await pairMedia(ctx, "B");
+  ctx.lab.setCameras(true);
+  a.pc.statsReport.set("i", {
+    type: "inbound-rtp",
+    kind: "video",
+    frameHeight: 180,
+    framesDecoded: 1,
+  });
+  b.pc.statsReport.set("i", {
+    type: "inbound-rtp",
+    kind: "video",
+    frameHeight: 180,
+    framesDecoded: 1,
+  });
+  ctx.clock.advance(2000);
+  await flush();
+  assert.equal(tile(ctx, "A").media.stats?.inHeight, 180);
+  assert.equal(tile(ctx, "B").media.stats?.inHeight, 180);
+
+  // A's *session* fails (dropped DC), not just its media link. MediaLink.close() never flips
+  // the link's own .state off "ready", so without the fix A would be polled forever and its
+  // tile would keep showing media.state "ready".
+  const aCallsBeforeClose = a.pc.getStatsCalls;
+  a.dc.close();
+  assert.equal(tile(ctx, "A").media.state, "none");
+  assert.equal(tile(ctx, "A").media.stats, undefined);
+  ctx.clock.advance(2000);
+  await flush();
+  assert.equal(a.pc.getStatsCalls, aCallsBeforeClose, "no getStats on a's dead pc");
+  b.pc.statsReport.set("i", {
+    type: "inbound-rtp",
+    kind: "video",
+    frameHeight: 360,
+    framesDecoded: 2,
+  });
+  ctx.clock.advance(2000);
+  await flush();
+  assert.equal(tile(ctx, "B").media.stats?.inHeight, 360, "B keeps polling on its own");
+
+  // Now B fails too: nobody is left ready, so the interval itself must stop.
+  const bCallsBeforeClose = b.pc.getStatsCalls;
+  b.dc.close();
+  assert.equal(tile(ctx, "B").media.state, "none");
+  assert.equal(tile(ctx, "B").media.stats, undefined);
+  b.pc.statsReport.set("i", {
+    type: "inbound-rtp",
+    kind: "video",
+    frameHeight: 720,
+    framesDecoded: 3,
+  });
+  ctx.clock.advance(4000);
+  await flush();
+  assert.equal(a.pc.getStatsCalls, aCallsBeforeClose, "still no getStats on a's dead pc");
+  assert.equal(b.pc.getStatsCalls, bCallsBeforeClose, "no getStats once nobody is ready");
+});

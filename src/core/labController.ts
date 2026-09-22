@@ -312,7 +312,7 @@ export class LabController extends Emitter<LabEvents> {
   /** Thumbnails from every station (persisted preference). */
   setCameras(on: boolean): void {
     this.state.settings.media.cameras = on;
-    for (const [key, s] of this.sessions) s.media?.request(this.desiredSend(key));
+    for (const [key, s] of this.sessions) this.readyLink(s)?.request(this.desiredSend(key));
     this.syncStats();
     this.persist();
   }
@@ -324,8 +324,14 @@ export class LabController extends Emitter<LabEvents> {
     const prev = this.focused;
     if (prev === key) return;
     this.focused = key;
-    if (prev !== undefined) this.sessions.get(prev)?.media?.request(this.desiredSend(prev));
-    if (key !== undefined) this.sessions.get(key)?.media?.request(this.desiredSend(key));
+    if (prev !== undefined) {
+      const s = this.sessions.get(prev);
+      if (s) this.readyLink(s)?.request(this.desiredSend(prev));
+    }
+    if (key !== undefined) {
+      const s = this.sessions.get(key);
+      if (s) this.readyLink(s)?.request(this.desiredSend(key));
+    }
     this.syncStats();
     this.changed();
   }
@@ -353,16 +359,23 @@ export class LabController extends Emitter<LabEvents> {
       const e = this.state.roster[key]!;
       const s = this.sessions.get(key);
       const l = this.live.get(key);
-      const link = s?.media;
-      const media: TileMedia = {
-        state: link?.state ?? "none",
-        cam: l?.media.cam ?? "off",
-        send: l?.media.send ?? null,
-      };
-      const reason = link?.reason ?? l?.media.reason;
-      if (reason !== undefined) media.reason = reason;
-      if (l?.media.track) media.track = l.media.track;
-      if (l?.media.stats) media.stats = l.media.stats;
+      // A failed session has torn its media down (spec §4.5): MediaLink.close() never flips
+      // `.state` off "ready", so a dead session's link would otherwise be reported as live.
+      const failed = s?.state === "failed";
+      const link = failed ? undefined : s?.media;
+      const media: TileMedia = failed
+        ? { state: "none", cam: "off", send: null }
+        : {
+            state: link?.state ?? "none",
+            cam: l?.media.cam ?? "off",
+            send: l?.media.send ?? null,
+          };
+      if (!failed) {
+        const reason = link?.reason ?? l?.media.reason;
+        if (reason !== undefined) media.reason = reason;
+        if (l?.media.track) media.track = l.media.track;
+        if (l?.media.stats) media.stats = l.media.stats;
+      }
       const view: RosterView = {
         key,
         ws: e.ws,
@@ -510,8 +523,8 @@ export class LabController extends Emitter<LabEvents> {
 
   /** Push the current broadcast (or its absence) to one ready link. */
   private applyBroadcast(s: PeerSession): void {
-    const link = s.media;
-    if (!link || link.state !== "ready") return;
+    const link = this.readyLink(s);
+    if (!link) return;
     const { source, track } = this.broadcast;
     const m = this.state.settings.media;
     const profile =
@@ -539,9 +552,21 @@ export class LabController extends Emitter<LabEvents> {
     );
   }
 
+  /**
+   * The station's media link, but only when the session itself is still alive. MediaLink.close()
+   * never changes `.state` off "ready", so a failed session's link would otherwise still look
+   * ready forever: callers that need to actually push/pull media, or decide whether one is
+   * doing so, must go through here rather than reading `s.media` directly.
+   */
+  private readyLink(s: PeerSession): MediaLink | undefined {
+    const link = s.media;
+    if (!link || link.state !== "ready") return undefined;
+    return s.state === "connected" || s.state === "degraded" ? link : undefined;
+  }
+
   /** Poll getStats only while something is streaming and someone is ready to report. */
   private syncStats(): void {
-    const anyReady = [...this.sessions.values()].some((s) => s.media?.state === "ready");
+    const anyReady = [...this.sessions.values()].some((s) => this.readyLink(s) !== undefined);
     const want = this.mediaActive() && anyReady;
     if (want && this.statsTimer === undefined) {
       this.statsTimer = this.env.clock.setInterval(
@@ -557,8 +582,8 @@ export class LabController extends Emitter<LabEvents> {
   private async pollStats(): Promise<void> {
     const jobs: Promise<void>[] = [];
     for (const [key, s] of this.sessions) {
-      const link = s.media;
-      if (!link || link.state !== "ready") continue;
+      const link = this.readyLink(s);
+      if (!link) continue;
       jobs.push(
         link.stats().then((v) => {
           const l = this.live.get(key);

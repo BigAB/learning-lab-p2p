@@ -146,6 +146,7 @@ export class FakeRTCPeerConnection {
   signalingState: RTCSignalingState = "stable";
   transceivers: FakeTransceiver[] = [];
   statsReport = new Map<string, Record<string, unknown>>();
+  getStatsCalls = 0;
   rejectSetRemote: Error | undefined;
   rejectCreateOffer: Error | undefined;
   constructor(
@@ -170,6 +171,7 @@ export class FakeRTCPeerConnection {
     return [...this.transceivers];
   }
   async getStats(): Promise<RTCStatsReport> {
+    this.getStatsCalls++;
     return this.statsReport as unknown as RTCStatsReport;
   }
   async createOffer(): Promise<RTCSessionDescriptionInit> {
