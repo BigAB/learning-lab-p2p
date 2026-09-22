@@ -1,8 +1,10 @@
 import { realClock } from "../core/clock";
 import { LabController } from "../core/labController";
 import { decodeWire, encodeWire } from "../core/sdpCodec";
+import { wsKey } from "../schemas/ws";
 import { APP_VERSION } from "../ui/platform/appVersion";
 import { browserKv } from "../ui/platform/browserKv";
+import { browserMedia } from "../ui/platform/browserMedia";
 import { browserRtc } from "../ui/platform/browserRtc";
 import { primeCameraPermission } from "../ui/platform/camera";
 import { loadCertificate } from "../ui/platform/cert";
@@ -27,17 +29,25 @@ async function bootTeacherUncached(): Promise<LabController> {
     rtc: browserRtc,
     clock: realClock,
     kv: browserKv,
+    media: browserMedia,
     appVersion: APP_VERSION,
     ua: navigator.userAgent,
     ...(certificates ? { certificates } : {}),
     log: (m) => console.warn("[teacher]", m),
   });
   if (import.meta.env.DEV) {
-    registerTestHook("teacher", async (wire) => {
-      const p = await decodeWire(wire);
-      if (p.role !== "offer") throw new Error("teacher expects an offer");
-      return encodeWire(await lab.acceptOffer(p));
-    });
+    registerTestHook(
+      "teacher",
+      async (wire) => {
+        const p = await decodeWire(wire);
+        if (p.role !== "offer") throw new Error("teacher expects an offer");
+        return encodeWire(await lab.acceptOffer(p));
+      },
+      {
+        mediaStats: (ws) =>
+          lab.sessions.get(wsKey(ws))?.media?.stats() ?? Promise.resolve(undefined),
+      },
+    );
   }
   return lab;
 }

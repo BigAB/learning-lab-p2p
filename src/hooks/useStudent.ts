@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PeerSession, SessionState } from "../core/peerSession";
-import type { StudentController } from "../core/studentController";
+import type { StudentController, StudentMediaView } from "../core/studentController";
 import type { StudentState } from "../schemas/storage";
 
 export function useStudent(c: StudentController) {
@@ -8,8 +8,10 @@ export function useStudent(c: StudentController) {
   const [state, setState] = useState<StudentState>(c.state);
   const [lastCmd, setLastCmd] = useState<{ cmd: string; at: number } | undefined>();
   const [lastError, setLastError] = useState<{ message: string; at: number } | undefined>();
+  const [media, setMedia] = useState<StudentMediaView>(() => c.mediaView());
   useEffect(() => {
     setSession(c.session);
+    setMedia(c.mediaView());
     const offs = [
       // The error is NOT cleared here: a respawn emits `session` immediately, long before the
       // new attempt has produced anything, and dropping the message then would leave the screen
@@ -18,6 +20,7 @@ export function useStudent(c: StudentController) {
       c.on("state", (s) => setState({ ...s })),
       c.on("cmd", (cmd) => setLastCmd({ cmd, at: Date.now() })),
       c.on("error", (message) => setLastError({ message, at: Date.now() })),
+      c.on("media", setMedia),
     ];
     return () => offs.forEach((off) => off());
   }, [c]);
@@ -32,5 +35,5 @@ export function useStudent(c: StudentController) {
     clear(session.state);
     return session.on("state", clear);
   }, [session]);
-  return { session, state, lastCmd, lastError };
+  return { session, state, lastCmd, lastError, media };
 }
