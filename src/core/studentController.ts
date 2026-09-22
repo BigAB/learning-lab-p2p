@@ -1,8 +1,10 @@
 import type { CmdMessage } from "../schemas/protocol";
+import { LEGACY_STUDENT_KEY } from "../schemas/legacy";
 import type { StudentState } from "../schemas/storage";
 import { STUDENT_KEY, StudentStateSchema } from "../schemas/storage";
 import type { Clock, TimerHandle } from "./clock";
 import { Emitter } from "./events";
+import { migrateStudentV1 } from "./migrations";
 import { PeerSession, type SessionTimers } from "./peerSession";
 import type { DevicePort, KeyValueStore, RtcFactory, WakeLockPort } from "./ports";
 import { loadState, saveState } from "./store";
@@ -35,7 +37,7 @@ export const MAX_RESTART_DELAY_MS = 30_000;
 
 /** Owns the one student PeerSession: spawns, persists, auto-restarts on failure, reports status. */
 export class StudentController extends Emitter<StudentEvents> {
-  readonly ws: number;
+  readonly ws: string;
   session: PeerSession | null = null;
   state: StudentState;
   wakeLockHeld = false;
@@ -45,20 +47,23 @@ export class StudentController extends Emitter<StudentEvents> {
   private attempt = 0;
   private respawnTimer: TimerHandle | undefined;
 
-  static persistedWs(kv: KeyValueStore): number | undefined {
+  /** The saved station, v2 first, else what a v1 blob would migrate to. Removes nothing. */
+  static persistedWs(kv: KeyValueStore): string | undefined {
     const raw = kv.get(STUDENT_KEY);
-    if (raw === null) return undefined;
-    try {
-      const r = StudentStateSchema.safeParse(JSON.parse(raw));
-      return r.success ? r.data.ws : undefined;
-    } catch {
-      return undefined;
+    if (raw !== null) {
+      try {
+        const r = StudentStateSchema.safeParse(JSON.parse(raw));
+        return r.success ? r.data.ws : undefined;
+      } catch {
+        return undefined;
+      }
     }
+    return migrateStudentV1(kv, () => {})?.ws;
   }
 
   constructor(
     private readonly env: StudentEnv,
-    ws: number,
+    ws: string,
   ) {
     super();
     this.ws = ws;
@@ -69,7 +74,10 @@ export class StudentController extends Emitter<StudentEvents> {
       StudentStateSchema,
       StudentStateSchema.parse({ ws }),
       log,
+      () => migrateStudentV1(env.kv, log),
     );
+    // v1 never outlives a v2 boot, whether it was migrated or shadowed by an existing v2 blob.
+    env.kv.remove(LEGACY_STUDENT_KEY);
     this.state = { ...loaded, ws };
     this.persist();
   }

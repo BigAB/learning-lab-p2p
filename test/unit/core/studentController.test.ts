@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import { StudentController } from "../../../src/core/studentController";
 import { extractPayload } from "../../../src/core/sdpCodec";
 import { STUDENT_KEY } from "../../../src/schemas/storage";
+import { LEGACY_STUDENT_KEY } from "../../../src/schemas/legacy";
 import { FakeClock } from "../helpers/fakeClock";
 import { FakeDevice, FakeWakeLock } from "../helpers/fakeDevice";
 import { MemoryKv } from "../helpers/memoryKv";
 import { FakeRtcFactory, LINK_LOCAL_ONLY_OFFER, SAFARI_ANSWER, flush } from "../helpers/fakeRtc";
 
-const answer = extractPayload(SAFARI_ANSWER, "answer", 7);
+const answer = extractPayload(SAFARI_ANSWER, "answer", "7");
 
-function make(ws = 7, offerSdp?: string) {
+function make(ws = "7", offerSdp?: string) {
   const rtc = new FakeRtcFactory(offerSdp);
   const clock = new FakeClock();
   const kv = new MemoryKv();
@@ -47,8 +48,8 @@ async function bringUp(ctx: ReturnType<typeof make>) {
 }
 
 test("persists ws and exposes it for conflict prompts", () => {
-  const { kv } = make(7);
-  assert.equal(StudentController.persistedWs(kv), 7);
+  const { kv } = make("7");
+  assert.equal(StudentController.persistedWs(kv), "7");
   assert.equal(StudentController.persistedWs(new MemoryKv()), undefined);
 });
 
@@ -88,7 +89,7 @@ test("connected → pairCount++, lastConnectedAt saved, status sent", async () =
 test("hello from teacher records teacherAppVersion", async () => {
   const ctx = make();
   const dc = await bringUp(ctx);
-  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: 7, appVersion: "v2", ua: "mac" }));
+  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: "7", appVersion: "v2", ua: "mac" }));
   assert.equal(ctx.c.state.teacherAppVersion, "v2");
 });
 
@@ -190,7 +191,7 @@ test("persist never throws even if the KeyValueStore.set throws", async () => {
         remove: () => {},
       },
     },
-    7,
+    "7",
   );
   assert.doesNotThrow(() => {
     c.start();
@@ -206,7 +207,7 @@ async function failOneSpawn(ctx: ReturnType<typeof make>) {
 }
 
 test("start() rejection: session dropped, error emitted, respawn backs off exponentially", async () => {
-  const ctx = make(7, LINK_LOCAL_ONLY_OFFER);
+  const ctx = make("7", LINK_LOCAL_ONLY_OFFER);
   const errors: string[] = [];
   ctx.c.on("error", (m) => errors.push(m));
   ctx.c.start();
@@ -236,7 +237,7 @@ test("start() rejection: session dropped, error emitted, respawn backs off expon
 });
 
 test("stop() cancels a respawn pending after a failed start()", async () => {
-  const ctx = make(7, LINK_LOCAL_ONLY_OFFER);
+  const ctx = make("7", LINK_LOCAL_ONLY_OFFER);
   ctx.c.start();
   await flush();
   await failOneSpawn(ctx);
@@ -257,7 +258,7 @@ test("a session that connects resets the respawn backoff", async () => {
 });
 
 test("stop() then start() restarts the respawn backoff from restartDelayMs", async () => {
-  const ctx = make(7, LINK_LOCAL_ONLY_OFFER);
+  const ctx = make("7", LINK_LOCAL_ONLY_OFFER);
   ctx.c.start();
   await flush();
   await failOneSpawn(ctx); // attempt 1: a respawn is now pending at 500 ms
@@ -269,4 +270,52 @@ test("stop() then start() restarts the respawn backoff from restartDelayMs", asy
   ctx.clock.advance(500);
   await flush();
   assert.equal(ctx.rtc.pcs.length, 3, "first failure after a restart waits restartDelayMs, not 2×");
+});
+
+test("a v1 blob is migrated on first boot and removed; pairCount survives", () => {
+  const kv = new MemoryKv();
+  kv.set(LEGACY_STUDENT_KEY, JSON.stringify({ ws: 7, pairCount: 3 }));
+  assert.equal(
+    StudentController.persistedWs(kv),
+    "7",
+    "resolveWs sees the old station before boot",
+  );
+  const c = new StudentController(
+    {
+      rtc: new FakeRtcFactory(),
+      clock: new FakeClock(),
+      kv,
+      device: new FakeDevice(),
+      wakeLock: new FakeWakeLock(),
+      reload: () => {},
+      appVersion: "v1",
+      ua: "ipad",
+    },
+    "7",
+  );
+  assert.equal(c.state.pairCount, 3);
+  assert.equal(JSON.parse(kv.get(STUDENT_KEY)!).ws, "7");
+  assert.equal(kv.get(LEGACY_STUDENT_KEY), null);
+});
+
+test("when v2 exists, v1 is ignored and removed", () => {
+  const kv = new MemoryKv();
+  kv.set(STUDENT_KEY, JSON.stringify({ ws: "Row 2", pairCount: 1 }));
+  kv.set(LEGACY_STUDENT_KEY, JSON.stringify({ ws: 7, pairCount: 9 }));
+  assert.equal(StudentController.persistedWs(kv), "Row 2");
+  const c = new StudentController(
+    {
+      rtc: new FakeRtcFactory(),
+      clock: new FakeClock(),
+      kv,
+      device: new FakeDevice(),
+      wakeLock: new FakeWakeLock(),
+      reload: () => {},
+      appVersion: "v1",
+      ua: "ipad",
+    },
+    "Row 2",
+  );
+  assert.equal(c.state.pairCount, 1);
+  assert.equal(kv.get(LEGACY_STUDENT_KEY), null);
 });
