@@ -434,6 +434,22 @@ test("student: a repeated null request while already off sends no second media.s
   assert.deepEqual(sent.at(-1), { t: "media.status", cam: "on", send: thumb });
 });
 
+test("student: an unexpected throw inside applyRequest resolves, and is reported as ignored", async () => {
+  const { link, port, ignored } = await readyStudent();
+  await link.applyRequest(thumb, port);
+  // stopCapture() runs outside every try: a track whose stop() blows up is an unexpected throw.
+  port.last().stop = () => {
+    throw new Error("stop exploded");
+  };
+  await link.applyRequest(null, port);
+  assert.equal(ignored.length, 1);
+  assert.match(ignored[0]!, /applyRequest: stop exploded/);
+  // The queue is not wedged: the next request still runs.
+  port.last().stop = () => {};
+  await link.applyRequest(thumb, port);
+  assert.equal(link.cam, "on");
+});
+
 test("student: request before ready is ignored; close stops the capture", async () => {
   const early = makeLink("student");
   const port = new FakeMediaPort();

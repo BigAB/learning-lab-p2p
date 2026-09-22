@@ -215,7 +215,11 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
    * next request. Resolves after the resulting media.status has been sent. Never rejects.
    */
   applyRequest(send: Profile | null, port: MediaPort): Promise<void> {
-    this.queue = this.queue.then(() => this.doApply(send, port)).catch(() => {});
+    this.queue = this.queue
+      .then(() => this.doApply(send, port))
+      // doApply handles every expected failure itself; anything reaching here is a bug or an
+      // engine surprise. Keep the queue alive, but say so rather than swallowing it.
+      .catch((e: unknown) => this.ignore(`applyRequest: ${msg(e)}`));
     return this.queue;
   }
 
