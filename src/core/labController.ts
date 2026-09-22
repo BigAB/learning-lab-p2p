@@ -465,8 +465,14 @@ export class LabController extends Emitter<LabEvents> {
       this.persist();
       const link = s.media;
       if (link) {
-        if (h.caps?.includes(MEDIA_CAP)) void link.offer(this.state.settings.media.codec);
-        else link.markUnsupported();
+        if (h.caps?.includes(MEDIA_CAP)) {
+          if (link.state === "none")
+            link
+              .offer(this.state.settings.media.codec)
+              .catch((e: unknown) =>
+                this.env.log?.(`media offer failed: ${e instanceof Error ? e.message : String(e)}`),
+              );
+        } else link.markUnsupported();
       }
     });
     s.on("media", (link) => this.wireMedia(key, s, link));

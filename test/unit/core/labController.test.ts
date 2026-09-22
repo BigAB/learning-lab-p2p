@@ -526,6 +526,18 @@ test("hello with media caps → offer sent; without → unsupported", async () =
   );
 });
 
+test("hello twice with media caps: exactly one media.offer, no unhandled rejection", async () => {
+  const ctx = makeMedia();
+  const a = await pair(ctx, "A");
+  a.dc.receive(hello(["media"]));
+  await flush();
+  a.dc.receive(hello(["media"]));
+  await flush();
+  const offers = a.dc.sentJson().filter((m) => (m as { t: string }).t === "media.offer");
+  assert.equal(offers.length, 1);
+  assert.equal(tile(ctx, "A").media.state, "negotiating");
+});
+
 test("ready link: broadcast off, request null by default; track exposed on the tile", async () => {
   const ctx = makeMedia();
   const { sent } = await pairMedia(ctx, "A");
