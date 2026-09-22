@@ -304,6 +304,15 @@ test("stats picks the video outbound/inbound rtp entries", async () => {
   assert.deepEqual(await link.stats(), { cpuLimited: false });
 });
 
+test("stats: a rejecting getStats() yields the empty view, never a rejection", async () => {
+  const { pc, link } = await readyTeacher();
+  pc.getStats = async () => {
+    throw new Error("InvalidStateError: connection closed");
+  };
+  assert.deepEqual(await link.stats(), { cpuLimited: false });
+  assert.equal(link.state, "ready");
+});
+
 test("close cancels the offer timer and refuses further work", async () => {
   const { clock, link, states } = makeLink("teacher", { mediaOfferMs: 1000 });
   await link.offer("h264");
