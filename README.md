@@ -1,14 +1,15 @@
 # Learning Lab P2P
 
-Serverless WebRTC between one teacher MacBook and up to 30 fixed iPads, signaled by QR codes carried on a phone. Static site on GitHub Pages.
+Serverless WebRTC between one teacher MacBook and any number of fixed iPads, signaled by QR codes carried on a phone. Static site on GitHub Pages.
 
 - Design: `docs/superpowers/specs/2026-09-20-p2p-core-design.md`
+- Design amendment (string IDs, dynamic roster): `docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md`
 - Agent/contributor rules: `AGENTS.md`
 - Lab day checklist: `docs/lab-checklist.md`
 
 ## Routes
 
-`/student?ws=N` · `/teacher` · `/courier` · `/dev/load`
+`/student?ws=ID` · `/teacher` · `/courier` · `/dev/load`
 
 ## Develop
 
