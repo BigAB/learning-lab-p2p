@@ -1,6 +1,6 @@
 # Learning Lab P2P — Phase 2 Bidirectional Media
 
-**Status:** proposed design, pre-implementation
+**Status:** approved design, pre-implementation
 **Date:** 2026-09-21
 **Builds on:** [2026-09-20-p2p-core-design.md](2026-09-20-p2p-core-design.md) as amended by [2026-09-21-variable-workstation-ids-design.md](2026-09-21-variable-workstation-ids-design.md). Nothing in those documents is changed except where this one says so. Roster is dynamic; every layout and every budget below is a function of `tiles.length`, never a constant.
 **Scope:** live video in both directions over the Phase 1 peer connections. Student → teacher: one low-rate thumbnail per station in the dashboard grid, with a per-station "focus" that raises one station's quality. Teacher → students: one outbound video track (the teacher's camera **or** screen) fanned out to every connected station. Renegotiation carries full SDP over the DataChannel. No audio (§3.1).
