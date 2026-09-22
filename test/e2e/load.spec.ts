@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 /**
  * /dev/load runs N auto-pairing student iframes against one LabController on a single page.
- * All iframes share the page's localStorage origin (each student overwrites lab.student.v1),
+ * All iframes share the page's localStorage origin (each student overwrites lab.student.v2),
  * which is fine here since ws comes from the iframe's URL, not from persisted state.
  */
 test("dev/load pairs 5 students against one teacher", async ({ page }) => {

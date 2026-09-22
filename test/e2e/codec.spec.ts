@@ -29,7 +29,7 @@ test("rebuilt SDP is accepted by a real RTCPeerConnection in both directions", a
     a.createDataChannel("lab");
     await a.setLocalDescription(await a.createOffer());
     await gather(a);
-    const offer = codec.extractPayload(a.localDescription!.sdp, "offer", 7);
+    const offer = codec.extractPayload(a.localDescription!.sdp, "offer", "7");
     const offerWire = await codec.encodeWire(offer);
     const offerBack = await codec.decodeWire(offerWire);
 
@@ -37,7 +37,7 @@ test("rebuilt SDP is accepted by a real RTCPeerConnection in both directions", a
     await b.setRemoteDescription({ type: "offer", sdp: codec.buildSdp(offerBack) });
     await b.setLocalDescription(await b.createAnswer());
     await gather(b);
-    const answer = codec.extractPayload(b.localDescription!.sdp, "answer", 7);
+    const answer = codec.extractPayload(b.localDescription!.sdp, "answer", "7");
     const answerWire = await codec.encodeWire(answer);
     const answerBack = await codec.decodeWire(answerWire);
 

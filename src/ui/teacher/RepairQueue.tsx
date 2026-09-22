@@ -1,4 +1,6 @@
-export function RepairQueue({ queue }: { queue: number[] }) {
+import { wsKey } from "../../schemas/ws";
+
+export function RepairQueue({ queue }: { queue: string[] }) {
   return (
     <aside className="side" data-repair-queue>
       <h3>Needs re-pair ({queue.length})</h3>
@@ -7,7 +9,7 @@ export function RepairQueue({ queue }: { queue: number[] }) {
       ) : (
         <ol>
           {queue.map((ws) => (
-            <li key={ws} data-queue-ws={ws}>
+            <li key={wsKey(ws)} data-queue-ws={wsKey(ws)}>
               Workstation {ws}
             </li>
           ))}

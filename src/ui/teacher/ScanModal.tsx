@@ -8,7 +8,7 @@ import { Scanner } from "../shared/Scanner";
 const IGNORE_REPEAT_MS = 3000;
 
 export function ScanModal({ lab, onClose }: { lab: LabController; onClose: () => void }) {
-  const [answer, setAnswer] = useState<{ wire: string; ws: number } | undefined>();
+  const [answer, setAnswer] = useState<{ wire: string; ws: string } | undefined>();
   const [error, setError] = useState<string | undefined>();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [pending, setPending] = useState(false);

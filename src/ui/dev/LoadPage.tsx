@@ -4,6 +4,7 @@ import { SupersededError, type LabController } from "../../core/labController";
 import { decodeWire, encodeWire } from "../../core/sdpCodec";
 import { useLabRoster } from "../../hooks/useLabRoster";
 import { usePromise } from "../../hooks/usePromise";
+import { WsSchema } from "../../schemas/ws";
 import { Tile } from "../teacher/Tile";
 
 export function LoadPage({ boot }: { boot: Promise<LabController> }) {
@@ -28,7 +29,7 @@ function Load({
   setCount: (n: number) => void;
 }) {
   const { tiles, counts } = useLabRoster(lab);
-  const wsList = useMemo(() => Array.from({ length: count }, (_, i) => i + 1), [count]);
+  const wsList = useMemo(() => Array.from({ length: count }, (_, i) => String(i + 1)), [count]);
 
   useEffect(() => {
     // Declared here, not at module scope: a top-level z.object() call is a side effect rollup
@@ -36,8 +37,8 @@ function Load({
     // production bundle even once main.tsx stopped routing to it.
     const OfferMsg = z.object({
       type: z.literal("lab-offer"),
-      ws: z.number().int().min(1).max(30),
-      wire: z.string().startsWith("LAB1:"),
+      ws: WsSchema,
+      wire: z.string().startsWith("LAB2:"),
     });
     const onMsg = (ev: MessageEvent) => {
       if (ev.origin !== location.origin) return;
@@ -81,7 +82,7 @@ function Load({
       </header>
       <main className="grid">
         {tiles.slice(0, count).map((t) => (
-          <Tile key={t.ws} t={t} onClick={() => {}} />
+          <Tile key={t.key} t={t} onClick={() => {}} />
         ))}
       </main>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 4, padding: 12 }}>

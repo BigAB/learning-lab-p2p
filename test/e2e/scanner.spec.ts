@@ -1,5 +1,5 @@
 import { chromium, test } from "@playwright/test";
-import { expectState, openStudent, openTeacher, readPayload } from "./helpers";
+import { expectState, openStudent, openTeacher, readPayload, tile } from "./helpers";
 import { writeQrY4m } from "./qrVideo";
 
 /**
@@ -10,8 +10,8 @@ import { writeQrY4m } from "./qrVideo";
 test("teacher pairs a student by scanning its offer QR through a fake camera", async ({
   browser,
 }) => {
-  const s = await openStudent(browser, 11);
-  const offer = await readPayload(s.page, "offer", 11);
+  const s = await openStudent(browser, "11");
+  const offer = await readPayload(s.page, "offer", "11");
 
   const clip = test.info().outputPath("offer-11.y4m");
   writeQrY4m(offer, clip);
@@ -27,9 +27,9 @@ test("teacher pairs a student by scanning its offer QR through a fake camera", a
     const t = await openTeacher(cameraBrowser);
     await t.page.locator("[data-action='scan']").click();
     // No injection: the answer only appears if the camera frames were decoded into the offer.
-    const answer = await readPayload(t.page, "answer", 11);
+    const answer = await readPayload(t.page, "answer", "11");
     await s.page.evaluate((w) => window.__lab!.inject(w), answer);
-    await expectState(t.page, "[data-tile='11']", "connected");
+    await expectState(t.page, tile("11"), "connected");
     await expectState(s.page, "#student", "connected");
     await t.ctx.close();
   } finally {

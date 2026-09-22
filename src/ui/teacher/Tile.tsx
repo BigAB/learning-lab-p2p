@@ -15,7 +15,7 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
   return (
     <div
       className="tile"
-      data-tile={t.ws}
+      data-tile={t.key}
       data-state={t.state}
       onClick={onClick}
       role="button"
@@ -23,7 +23,14 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span className="num">{t.ws}</span>
-        <StatusPill state={t.state} />
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {t.replaced && (
+            <span className="badge" data-replaced title="A new pairing replaced a live session">
+              ↺ replaced
+            </span>
+          )}
+          <StatusPill state={t.state} />
+        </span>
       </div>
       <div className="meta">{t.label ?? "—"}</div>
       <div className="meta">

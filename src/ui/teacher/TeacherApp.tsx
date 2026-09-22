@@ -29,8 +29,8 @@ export function TeacherApp({ boot }: { boot: Promise<LabController> }) {
 function Dashboard({ lab }: { lab: LabController }) {
   const { tiles, queue, counts } = useLabRoster(lab);
   const [scanning, setScanning] = useState(false);
-  const [open, setOpen] = useState<number | undefined>();
-  const openTile = open !== undefined ? tiles[open - 1] : undefined;
+  const [open, setOpen] = useState<string | undefined>();
+  const openTile = open !== undefined ? tiles.find((t) => t.key === open) : undefined;
   return (
     <div className="layout">
       <div>
@@ -51,8 +51,13 @@ function Dashboard({ lab }: { lab: LabController }) {
           <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{APP_VERSION}</span>
         </header>
         <main className="grid">
+          {tiles.length === 0 && (
+            <p className="meta" data-empty style={{ gridColumn: "1 / -1", textAlign: "center" }}>
+              No workstations yet — tap Scan and point the camera at a student's code.
+            </p>
+          )}
           {tiles.map((t) => (
-            <Tile key={t.ws} t={t} onClick={() => setOpen(t.ws)} />
+            <Tile key={t.key} t={t} onClick={() => setOpen(t.key)} />
           ))}
         </main>
       </div>

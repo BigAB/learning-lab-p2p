@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LabController, RosterView } from "../../core/labController";
 
 /** 8 bytes is plenty to eyeball across pairings and fits on one line of the drawer. */
@@ -19,6 +19,10 @@ export function TileDrawer({
   // The verdict compares *this* pairing's certificate with the last one. With no session this
   // run there is nothing to compare, so only the stored fingerprint itself is shown.
   const hasSession = t.state !== "never";
+  // Opening the drawer is how the teacher acknowledges the "replaced" badge.
+  useEffect(() => {
+    lab.acknowledgeReplaced(t.ws);
+  }, [lab, t.ws]);
   return (
     <div className="modal" onClick={onClose}>
       <div className="card" onClick={(e) => e.stopPropagation()} style={{ alignItems: "stretch" }}>
@@ -52,6 +56,22 @@ export function TileDrawer({
             }}
           >
             Reload
+          </button>
+          <button
+            className="secondary"
+            data-action="remove"
+            onClick={() => {
+              if (
+                confirm(
+                  `Remove ${t.ws}? Its tile and label are deleted; the iPad can pair again as a new station.`,
+                )
+              ) {
+                lab.remove(t.ws);
+                onClose();
+              }
+            }}
+          >
+            Remove workstation
           </button>
         </div>
         <h3>History</h3>
