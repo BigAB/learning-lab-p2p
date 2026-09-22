@@ -518,6 +518,31 @@ test("a MediaLink exists from DC open, emitted before connected, closed on teard
   assert.equal(s.media?.state, "none");
 });
 
+test("a second dc open is inert: one hello, one MediaLink, one heartbeat", async () => {
+  const { s, dc, clock, links } = await connectedWithCaps();
+  const first = s.media;
+  dc.open();
+  const hellos = dc.sentJson().filter((m) => (m as { t: string }).t === "hello");
+  assert.equal(hellos.length, 1);
+  assert.equal(links.length, 1);
+  assert.equal(s.media, first);
+  // Two Heartbeats would send two hb frames per interval.
+  const before = dc.sent.length;
+  clock.advance(TIMERS.heartbeatMs);
+  const hbs = dc.sentJson().slice(before).filter((m) => (m as { t: string }).t === "hb");
+  assert.equal(hbs.length, 1);
+});
+
+test("a MediaLink whose close() throws does not stop the session tearing down", async () => {
+  const { s, dc, rtc } = await connectedWithCaps();
+  s.media!.close = () => {
+    throw new Error("close exploded");
+  };
+  assert.doesNotThrow(() => dc.close());
+  assert.equal(s.state, "failed");
+  assert.equal(rtc.last().closed, true);
+});
+
 test("media.* frames route to the link and are not re-emitted as message", async () => {
   const { s, dc } = await connectedWithCaps();
   const messages: string[] = [];
