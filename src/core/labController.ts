@@ -129,6 +129,8 @@ export class LabController extends Emitter<LabEvents> {
   /** wsKey of the focused station, if any. */
   focused: string | undefined;
   private statsTimer: TimerHandle | undefined;
+  /** Monotonic per startBroadcast() call; only the latest call may take the air. */
+  private broadcastSeq = 0;
 
   constructor(private readonly env: TeacherEnv) {
     super();
@@ -288,7 +290,15 @@ export class LabController extends Emitter<LabEvents> {
     const port = this.env.media;
     if (!port) throw new Error("no media port");
     const pending = source === "camera" ? port.camera(CAPTURE) : port.screen();
+    // Two picker dialogs can be open at once and settle in either order; the teacher's latest
+    // choice is the one that should be on air. A superseded call releases its track and resolves
+    // quietly: it was not a failure, just overtaken.
+    const seq = ++this.broadcastSeq;
     const track = await pending;
+    if (seq !== this.broadcastSeq) {
+      track.stop();
+      return;
+    }
     this.stopBroadcastTrack();
     this.broadcast.source = source;
     this.broadcast.track = track;
