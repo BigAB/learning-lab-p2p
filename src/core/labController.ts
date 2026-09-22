@@ -7,9 +7,11 @@ import {
   TEACHER_KEY,
   TeacherStateSchema,
 } from "../schemas/storage";
-import { WS_MAX, WS_MIN } from "../schemas/ws";
+import { LEGACY_TEACHER_KEY } from "../schemas/legacy";
+import { compareWs, wsKey } from "../schemas/ws";
 import type { Clock } from "./clock";
 import { Emitter } from "./events";
+import { migrateTeacherV1 } from "./migrations";
 import { PeerSession, type SessionState } from "./peerSession";
 import type { KeyValueStore, RtcFactory, Visibility } from "./ports";
 import { loadState, saveState } from "./store";
@@ -25,7 +27,10 @@ export interface TeacherEnv {
 }
 
 export interface RosterView {
-  ws: number;
+  /** wsKey(ws): stable lookup handle, React key, `data-tile` value. */
+  key: string;
+  /** Display form: the ID as the student most recently typed it. */
+  ws: string;
   state: SessionState | "never";
   rtt?: number;
   label?: string;
@@ -44,6 +49,8 @@ export interface RosterView {
   fingerprint?: string;
   /** True when this ws paired before with a *different* certificate: not the same iPad. */
   fingerprintChanged: boolean;
+  /** This pairing replaced a session that was still connected/degraded. Cleared by acknowledgeReplaced(). */
+  replaced: boolean;
   history: { at: number; state: SessionState }[];
 }
 
@@ -57,6 +64,7 @@ interface Live {
   wakeLock?: boolean;
   remoteAppVersion?: string;
   fingerprintChanged: boolean;
+  replaced: boolean;
   history: { at: number; state: SessionState }[];
 }
 
@@ -67,13 +75,12 @@ export class SupersededError extends Error {
   override name = "SupersededError";
 }
 
-const ALL_WS = Array.from({ length: WS_MAX - WS_MIN + 1 }, (_, i) => WS_MIN + i);
 const HISTORY_CAP = 50;
 /**
- * A heartbeat lands every 5 s from up to 30 stations; persisting lastSeenAt on each would be a
- * localStorage write every 170 ms for nothing. Once a minute per station keeps a teacher-tab
- * reload honest to within a minute, and degraded/failed transitions write immediately because
- * "when did we lose it" is exactly the number the dashboard then needs.
+ * A heartbeat lands every 5 s from every station; persisting lastSeenAt on each would be a
+ * localStorage write every few hundred ms for nothing. Once a minute per station keeps a
+ * teacher-tab reload honest to within a minute, and degraded/failed transitions write
+ * immediately because "when did we lose it" is exactly the number the dashboard then needs.
  */
 const SEEN_PERSIST_MS = 60_000;
 
@@ -82,21 +89,26 @@ function hexFingerprint(fp: Uint8Array): string {
   return Array.from(fp, (b) => b.toString(16).padStart(2, "0").toUpperCase()).join(":");
 }
 
-/** Teacher side: up to 30 PeerSessions, persisted roster metadata, repair queue. */
+/** Teacher side: one PeerSession per known station, persisted roster metadata, repair queue. */
 export class LabController extends Emitter<LabEvents> {
   state: TeacherState;
-  readonly sessions = new Map<number, PeerSession>();
-  private readonly live = new Map<number, Live>();
+  /** Keyed by wsKey(ws). */
+  readonly sessions = new Map<string, PeerSession>();
+  private readonly live = new Map<string, Live>();
 
   constructor(private readonly env: TeacherEnv) {
     super();
+    const log = env.log ?? (() => {});
     this.state = loadState(
       env.kv,
       TEACHER_KEY,
       TeacherStateSchema,
       TeacherStateSchema.parse({}),
-      env.log,
+      log,
+      () => migrateTeacherV1(env.kv, log),
     );
+    // v1 never outlives a v2 boot, whether it was migrated or shadowed by an existing v2 blob.
+    env.kv.remove(LEGACY_TEACHER_KEY);
   }
 
   get settings(): Settings {
@@ -116,14 +128,16 @@ export class LabController extends Emitter<LabEvents> {
     return true;
   }
 
-  /** Validates the label before applying. Returns false (unchanged) on invalid input. */
-  setLabel(ws: number, label: string): boolean {
+  /** Validates the label before applying. Returns false (unchanged) on invalid input or unknown ws. */
+  setLabel(ws: string, label: string): boolean {
+    const e = this.state.roster[wsKey(ws)];
+    if (!e) return false;
     const r = RosterEntrySchema.shape.label.safeParse(label);
     if (!r.success) {
       this.env.log?.(`setLabel: invalid (${r.error.issues[0]?.message ?? "?"})`);
       return false;
     }
-    this.entry(ws).label = label;
+    e.label = label;
     this.persist();
     return true;
   }
@@ -131,7 +145,13 @@ export class LabController extends Emitter<LabEvents> {
   /** Accept a student's offer; resolves with our answer payload once ICE gathering completes. */
   acceptOffer(offer: SdpPayload): Promise<SdpPayload> {
     const ws = offer.ws;
-    this.sessions.get(ws)?.close();
+    const key = wsKey(ws);
+    const old = this.sessions.get(key);
+    // Reload-to-fix: a repeat pairing simply replaces the old session. If that session was still
+    // alive, the teacher should notice — a typo on another iPad may have kicked a healthy
+    // station — so the tile carries a badge until the drawer is opened.
+    const replaced = old !== undefined && (old.state === "connected" || old.state === "degraded");
+    old?.close();
     const { heartbeatMs, degradedMs, failedMs } = this.state.settings;
     const s = new PeerSession({
       role: "teacher",
@@ -143,17 +163,18 @@ export class LabController extends Emitter<LabEvents> {
       ua: this.env.ua,
       ...(this.env.certificates ? { certificates: this.env.certificates } : {}),
     });
-    this.sessions.set(ws, s);
+    this.sessions.set(key, s);
+    const e = this.entry(ws);
+    e.ws = ws; // the latest spelling is the one shown
     // The student's DTLS certificate is persisted per device (spec §6.3), so a fingerprint that
     // matches the previous pairing means the same iPad came back; a different one means the
     // station was swapped (or the iPad was wiped) and the teacher should be told.
-    const e = this.entry(ws);
     const fp = hexFingerprint(offer.fp);
     const fingerprintChanged = e.lastFingerprint !== undefined && e.lastFingerprint !== fp;
     // History is the station's story across the lab day, not this session's: a re-pair continues
     // it rather than wiping the evidence of why the last one died.
-    const previous = this.live.get(ws);
-    this.live.set(ws, { history: previous?.history ?? [], fingerprintChanged });
+    const previous = this.live.get(key);
+    this.live.set(key, { history: previous?.history ?? [], fingerprintChanged, replaced });
     this.wire(s);
     this.persist();
 
@@ -166,9 +187,9 @@ export class LabController extends Emitter<LabEvents> {
         this.persist();
         resolve(p);
       });
-      // A same-ws re-scan can close() this session (see acceptOffer above) while we're still
-      // waiting on the answer: applyRemote() then resolves silently instead of throwing (the
-      // peerSession fix for the gather-wait deadlock), so without this the promise would hang.
+      // A same-ws re-scan can close() this session while we're still waiting on the answer:
+      // applyRemote() then resolves silently instead of throwing, so without this the promise
+      // would hang.
       const offState = s.on("state", (st) => {
         if (st === "failed") {
           cleanup();
@@ -188,38 +209,66 @@ export class LabController extends Emitter<LabEvents> {
     return answer;
   }
 
-  sendCmd(ws: number, cmd: CmdMessage["cmd"]): void {
-    this.sessions.get(ws)?.send({ t: "cmd", cmd });
+  /**
+   * Forget a station: close its session, drop its tile, label and history. `false` if unknown.
+   * An iPad that is still running simply pairs again later as a fresh station.
+   */
+  remove(ws: string): boolean {
+    const key = wsKey(ws);
+    if (!(key in this.state.roster) && !this.sessions.has(key)) return false;
+    // Close first: the failed transition's handlers still read live/roster for this key.
+    this.sessions.get(key)?.close();
+    this.sessions.delete(key);
+    this.live.delete(key);
+    delete this.state.roster[key];
+    this.persist();
+    return true;
   }
 
-  /** Stations that need a walk: never paired this run, or hard-failed. Ordered by ws. */
-  repairQueue(): number[] {
-    return ALL_WS.filter((ws) => {
-      const st = this.sessions.get(ws)?.state;
-      return st === undefined || st === "failed";
-    });
+  /** The teacher has seen the `replaced` badge (drawer opened). */
+  acknowledgeReplaced(ws: string): void {
+    const l = this.live.get(wsKey(ws));
+    if (!l?.replaced) return;
+    l.replaced = false;
+    this.changed();
+  }
+
+  sendCmd(ws: string, cmd: CmdMessage["cmd"]): void {
+    this.sessions.get(wsKey(ws))?.send({ t: "cmd", cmd });
+  }
+
+  /** Stations that need a walk: known but no session this run, or hard-failed. Natural order. */
+  repairQueue(): string[] {
+    return this.orderedKeys()
+      .filter((k) => {
+        const st = this.sessions.get(k)?.state;
+        return st === undefined || st === "failed";
+      })
+      .map((k) => this.state.roster[k]!.ws);
   }
 
   snapshot(): RosterView[] {
-    return ALL_WS.map((ws) => {
-      const s = this.sessions.get(ws);
-      const e = this.state.roster[String(ws)];
-      const l = this.live.get(ws);
+    return this.orderedKeys().map((key) => {
+      const e = this.state.roster[key]!;
+      const s = this.sessions.get(key);
+      const l = this.live.get(key);
       const view: RosterView = {
-        ws,
+        key,
+        ws: e.ws,
         state: s?.state ?? "never",
         versionMismatch:
           l?.remoteAppVersion !== undefined && l.remoteAppVersion !== this.env.appVersion,
         fingerprintChanged: l?.fingerprintChanged ?? false,
+        replaced: l?.replaced ?? false,
         history: l ? [...l.history] : [],
       };
-      if (e?.lastFingerprint !== undefined) view.fingerprint = e.lastFingerprint;
+      if (e.lastFingerprint !== undefined) view.fingerprint = e.lastFingerprint;
       if (s?.lastRtt !== undefined) view.rtt = s.lastRtt;
-      if (e?.label !== undefined) view.label = e.label;
-      if (e?.lastConnectedAt !== undefined) view.lastConnectedAt = e.lastConnectedAt;
-      const seen = l?.lastSeenAt ?? e?.lastSeenAt;
+      if (e.label !== undefined) view.label = e.label;
+      if (e.lastConnectedAt !== undefined) view.lastConnectedAt = e.lastConnectedAt;
+      const seen = l?.lastSeenAt ?? e.lastSeenAt;
       if (seen !== undefined) view.lastSeenAt = seen;
-      if (e?.lastSeenUa !== undefined) view.lastSeenUa = e.lastSeenUa;
+      if (e.lastSeenUa !== undefined) view.lastSeenUa = e.lastSeenUa;
       if (l?.battery !== undefined) view.battery = l.battery;
       if (l?.charging !== undefined) view.charging = l.charging;
       if (l?.visibility !== undefined) view.visibility = l.visibility;
@@ -242,10 +291,16 @@ export class LabController extends Emitter<LabEvents> {
 
   // ---- internals ----
 
+  private orderedKeys(): string[] {
+    const roster = this.state.roster;
+    return Object.keys(roster).sort((a, b) => compareWs(roster[a]!.ws, roster[b]!.ws));
+  }
+
   private wire(s: PeerSession): void {
     const ws = s.ws;
+    const key = wsKey(ws);
     s.on("state", (st, prev) => {
-      const l = this.live.get(ws);
+      const l = this.live.get(key);
       if (l) {
         l.history.push({ at: this.env.clock.now(), state: st });
         if (l.history.length > HISTORY_CAP) l.history.splice(0, l.history.length - HISTORY_CAP);
@@ -269,7 +324,7 @@ export class LabController extends Emitter<LabEvents> {
     });
     s.on("inbound", () => {
       const now = this.env.clock.now();
-      const l = this.live.get(ws);
+      const l = this.live.get(key);
       const due = l?.seenPersistedAt === undefined || now - l.seenPersistedAt >= SEEN_PERSIST_MS;
       this.markSeen(ws, now, due);
       if (due) this.persist();
@@ -278,7 +333,7 @@ export class LabController extends Emitter<LabEvents> {
     s.on("hello", (h) => {
       const e = this.entry(ws);
       e.lastSeenUa = h.ua;
-      const l = this.live.get(ws);
+      const l = this.live.get(key);
       if (l) l.remoteAppVersion = h.appVersion;
       this.persist();
     });
@@ -289,7 +344,7 @@ export class LabController extends Emitter<LabEvents> {
     });
     s.on("message", (m) => {
       if (m.t !== "status") return;
-      const l = this.live.get(ws);
+      const l = this.live.get(key);
       if (!l) return;
       if (m.battery !== undefined) l.battery = m.battery;
       if (m.charging !== undefined) l.charging = m.charging;
@@ -301,8 +356,8 @@ export class LabController extends Emitter<LabEvents> {
   }
 
   /** Update the live sighting; `persist` also copies it into the roster entry (caller saves). */
-  private markSeen(ws: number, at: number, persist: boolean): void {
-    const l = this.live.get(ws);
+  private markSeen(ws: string, at: number, persist: boolean): void {
+    const l = this.live.get(wsKey(ws));
     if (l) l.lastSeenAt = at;
     if (persist) {
       this.entry(ws).lastSeenAt = at;
@@ -310,9 +365,10 @@ export class LabController extends Emitter<LabEvents> {
     }
   }
 
-  private entry(ws: number) {
-    const key = String(ws);
-    return (this.state.roster[key] ??= { pairCount: 0 });
+  /** The roster entry for `ws`, created on first sight with `ws` as its display form. */
+  private entry(ws: string) {
+    const key = wsKey(ws);
+    return (this.state.roster[key] ??= { ws, pairCount: 0 });
   }
 
   private persist(): void {

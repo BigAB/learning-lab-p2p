@@ -2,22 +2,23 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LabController, SupersededError } from "../../../src/core/labController";
 import { extractPayload } from "../../../src/core/sdpCodec";
+import { LEGACY_TEACHER_KEY } from "../../../src/schemas/legacy";
 import { TEACHER_KEY } from "../../../src/schemas/storage";
+import { wsKey } from "../../../src/schemas/ws";
 import { FakeClock } from "../helpers/fakeClock";
 import { MemoryKv } from "../helpers/memoryKv";
 import { CHROME_OFFER, FakeRtcFactory, flush } from "../helpers/fakeRtc";
 
-const offer = (ws: number) => extractPayload(CHROME_OFFER, "offer", ws);
+const offer = (ws: string) => extractPayload(CHROME_OFFER, "offer", ws);
 
-function make() {
+function make(kv = new MemoryKv()) {
   const rtc = new FakeRtcFactory();
   const clock = new FakeClock();
-  const kv = new MemoryKv();
   const lab = new LabController({ rtc, clock, kv, appVersion: "v1", ua: "mac" });
   return { rtc, clock, kv, lab };
 }
 
-async function pair(ctx: ReturnType<typeof make>, ws: number) {
+async function pair(ctx: ReturnType<typeof make>, ws: string) {
   const p = ctx.lab.acceptOffer(offer(ws));
   await flush();
   ctx.rtc.last().completeGathering();
@@ -27,45 +28,84 @@ async function pair(ctx: ReturnType<typeof make>, ws: number) {
   return { answer, dc };
 }
 
-test("fresh lab: 30 tiles never, repair queue is 1..30", () => {
+/** The tile for `ws`, whatever its current spelling. */
+function tile(ctx: ReturnType<typeof make>, ws: string) {
+  const t = ctx.lab.snapshot().find((v) => v.key === wsKey(ws));
+  assert.ok(t, `no tile for ${ws}`);
+  return t;
+}
+
+function saved(ctx: ReturnType<typeof make>) {
+  return JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
+    roster: Record<
+      string,
+      {
+        ws: string;
+        pairCount: number;
+        lastSeenUa?: string;
+        lastFingerprint?: string;
+        lastSeenAt?: number;
+        label?: string;
+      }
+    >;
+    settings: { heartbeatMs: number };
+  };
+}
+
+test("fresh lab: no tiles, empty repair queue, all counts zero", () => {
   const { lab } = make();
-  const snap = lab.snapshot();
-  assert.equal(snap.length, 30);
-  assert.ok(snap.every((t) => t.state === "never"));
-  assert.deepEqual(
-    lab.repairQueue(),
-    Array.from({ length: 30 }, (_, i) => i + 1),
-  );
+  assert.deepEqual(lab.snapshot(), []);
+  assert.deepEqual(lab.repairQueue(), []);
+  assert.deepEqual(lab.counts(), { connected: 0, degraded: 0, failed: 0, never: 0 });
 });
 
-test("acceptOffer resolves with an answer payload for the same ws", async () => {
+test("acceptOffer creates the tile and resolves with an answer for the same ws", async () => {
   const ctx = make();
-  const { answer } = await pair(ctx, 7);
+  const { answer } = await pair(ctx, "Row 7");
   assert.equal(answer.role, "answer");
-  assert.equal(answer.ws, 7);
-  assert.equal(ctx.lab.snapshot()[6]?.state, "connected");
-  assert.ok(!ctx.lab.repairQueue().includes(7));
+  assert.equal(answer.ws, "Row 7");
+  const t = tile(ctx, "row 7");
+  assert.equal(t.ws, "Row 7");
+  assert.equal(t.key, "row 7");
+  assert.equal(t.state, "connected");
+  assert.deepEqual(ctx.lab.repairQueue(), []);
 });
 
-test("change event fires on state transitions and roster is persisted", async () => {
+test("snapshot and repairQueue are in natural, case-insensitive order", async () => {
+  const ctx = make();
+  for (const ws of ["Row 10", "2", "row 2", "10", "1"]) await pair(ctx, ws);
+  assert.deepEqual(
+    ctx.lab.snapshot().map((t) => t.ws),
+    ["1", "2", "10", "row 2", "Row 10"],
+  );
+  ctx.rtc.pcs[1]!.channels.at(-1)!.close(); // "2" fails
+  assert.deepEqual(ctx.lab.repairQueue(), ["2"]);
+});
+
+test("change event fires on state transitions and roster is persisted under wsKey", async () => {
   const ctx = make();
   let changes = 0;
   ctx.lab.on("change", () => changes++);
-  const { dc } = await pair(ctx, 3);
+  const { dc } = await pair(ctx, "Row 3");
   assert.ok(changes >= 2);
   dc.receive(
-    JSON.stringify({ t: "hello", role: "student", ws: 3, appVersion: "v1", ua: "iPad Safari" }),
+    JSON.stringify({
+      t: "hello",
+      role: "student",
+      ws: "Row 3",
+      appVersion: "v1",
+      ua: "iPad Safari",
+    }),
   );
-  const saved = JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
-    roster: Record<string, { pairCount: number; lastSeenUa?: string }>;
-  };
-  assert.equal(saved.roster["3"]?.pairCount, 1);
-  assert.equal(saved.roster["3"]?.lastSeenUa, "iPad Safari");
+  const e = saved(ctx).roster["row 3"]!;
+  assert.equal(e.ws, "Row 3");
+  assert.equal(e.pairCount, 1);
+  assert.equal(e.lastSeenUa, "iPad Safari");
 });
 
 test("status messages populate the tile; version mismatch flagged", async () => {
   const ctx = make();
-  const { dc } = await pair(ctx, 5);
+  const { dc } = await pair(ctx, "5");
   dc.receive(
     JSON.stringify({
       t: "status",
@@ -75,62 +115,117 @@ test("status messages populate the tile; version mismatch flagged", async () => 
       wakeLock: false,
     }),
   );
-  dc.receive(JSON.stringify({ t: "hello", role: "student", ws: 5, appVersion: "v0", ua: "x" }));
-  const tile = ctx.lab.snapshot()[4]!;
-  assert.equal(tile.battery, 0.4);
-  assert.equal(tile.visibility, "hidden");
-  assert.equal(tile.versionMismatch, true);
-  assert.equal(tile.remoteAppVersion, "v0");
+  dc.receive(JSON.stringify({ t: "hello", role: "student", ws: "5", appVersion: "v0", ua: "x" }));
+  const t = tile(ctx, "5");
+  assert.equal(t.battery, 0.4);
+  assert.equal(t.visibility, "hidden");
+  assert.equal(t.versionMismatch, true);
+  assert.equal(t.remoteAppVersion, "v0");
 });
 
-test("re-accepting an offer for a connected ws replaces the session", async () => {
+test("re-accepting an offer for a connected ws replaces the session silently and flags the tile", async () => {
   const ctx = make();
-  const { dc } = await pair(ctx, 2);
-  const first = ctx.lab.sessions.get(2)!;
+  const { dc } = await pair(ctx, "2");
+  const first = ctx.lab.sessions.get("2")!;
   let repairs = 0;
   first.on("needsRepair", () => repairs++);
-  await pair(ctx, 2);
-  assert.notEqual(ctx.lab.sessions.get(2), first);
+  await pair(ctx, "2");
+  assert.notEqual(ctx.lab.sessions.get("2"), first);
   assert.equal(first.state, "failed");
   assert.equal(repairs, 0, "replacement is silent");
   assert.equal(dc.readyState, "closed");
+  assert.equal(ctx.lab.snapshot().length, 1, "one tile, not two");
+  assert.equal(tile(ctx, "2").replaced, true, "the old session was live: teacher should notice");
+});
+
+test("takeover under a different spelling keeps one tile and shows the latest spelling", async () => {
+  const ctx = make();
+  await pair(ctx, "Row2");
+  ctx.lab.setLabel("Row2", "window seat");
+  await pair(ctx, "ROW2");
+  assert.equal(ctx.lab.snapshot().length, 1);
+  const t = tile(ctx, "row2");
+  assert.equal(t.ws, "ROW2");
+  assert.equal(t.label, "window seat", "roster metadata carries over: same station");
+  assert.equal(saved(ctx).roster["row2"]?.ws, "ROW2");
+  assert.equal(saved(ctx).roster["row2"]?.pairCount, 2);
+});
+
+test("replaced is not set when the old session had already failed or never existed", async () => {
+  const ctx = make();
+  const { dc } = await pair(ctx, "9");
+  assert.equal(tile(ctx, "9").replaced, false);
+  dc.close();
+  assert.equal(tile(ctx, "9").state, "failed");
+  await pair(ctx, "9");
+  assert.equal(tile(ctx, "9").replaced, false, "re-pairing a dead station is the normal path");
+});
+
+test("acknowledgeReplaced clears the flag and emits change once", async () => {
+  const ctx = make();
+  await pair(ctx, "4");
+  await pair(ctx, "4");
+  assert.equal(tile(ctx, "4").replaced, true);
+  let changes = 0;
+  ctx.lab.on("change", () => changes++);
+  ctx.lab.acknowledgeReplaced("4");
+  ctx.lab.acknowledgeReplaced("4");
+  assert.equal(tile(ctx, "4").replaced, false);
+  assert.equal(changes, 1);
+});
+
+test("remove closes the session, drops the tile and the roster entry; unknown → false", async () => {
+  const ctx = make();
+  const { dc } = await pair(ctx, "Seat 4");
+  ctx.lab.setLabel("Seat 4", "by the door");
+  assert.equal(ctx.lab.remove("seat 4"), true);
+  assert.equal(dc.readyState, "closed");
+  assert.deepEqual(ctx.lab.snapshot(), []);
+  assert.deepEqual(ctx.lab.repairQueue(), []);
+  assert.equal(saved(ctx).roster["seat 4"], undefined);
+  assert.equal(ctx.lab.remove("seat 4"), false);
+  assert.equal(ctx.lab.remove("nobody"), false);
+  await pair(ctx, "Seat 4");
+  const t = tile(ctx, "Seat 4");
+  assert.equal(t.label, undefined, "a removed station comes back fresh");
+  assert.equal(saved(ctx).roster["seat 4"]?.pairCount, 1);
 });
 
 test("failed session lands in repairQueue with history", async () => {
   const ctx = make();
-  const { dc } = await pair(ctx, 9);
+  const { dc } = await pair(ctx, "9");
   dc.close();
-  assert.ok(ctx.lab.repairQueue().includes(9));
-  const tile = ctx.lab.snapshot()[8]!;
-  assert.equal(tile.state, "failed");
-  assert.deepEqual(tile.history.map((h) => h.state).slice(-2), ["connected", "failed"]);
+  assert.deepEqual(ctx.lab.repairQueue(), ["9"]);
+  const t = tile(ctx, "9");
+  assert.equal(t.state, "failed");
+  assert.deepEqual(t.history.map((h) => h.state).slice(-2), ["connected", "failed"]);
 });
 
 test("settings update persists and is applied to new sessions", async () => {
   const ctx = make();
   ctx.lab.updateSettings({ heartbeatMs: 1000, degradedMs: 2000, failedMs: 3000 });
-  assert.equal(JSON.parse(ctx.kv.get(TEACHER_KEY)!).settings.heartbeatMs, 1000);
-  const { dc } = await pair(ctx, 1);
+  assert.equal(saved(ctx).settings.heartbeatMs, 1000);
+  const { dc } = await pair(ctx, "1");
   ctx.clock.advance(1000);
   assert.equal((dc.sentJson().at(-1) as { t: string }).t, "hb");
   ctx.clock.advance(2000);
-  assert.equal(ctx.lab.snapshot()[0]?.state, "degraded");
+  assert.equal(tile(ctx, "1").state, "degraded");
 });
 
-test("sendCmd routes to the right session and sets labels", async () => {
+test("sendCmd routes to the right session (any spelling) and sets labels", async () => {
   const ctx = make();
-  const { dc } = await pair(ctx, 4);
-  ctx.lab.sendCmd(4, "ping");
+  const { dc } = await pair(ctx, "Row 4");
+  ctx.lab.sendCmd("ROW 4", "ping");
   assert.deepEqual(dc.sentJson().at(-1), { t: "cmd", cmd: "ping" });
-  ctx.lab.setLabel(4, "Row 1 seat 4");
-  assert.equal(ctx.lab.snapshot()[3]?.label, "Row 1 seat 4");
-  ctx.lab.sendCmd(29, "ping"); // no session: no throw
+  ctx.lab.setLabel("row 4", "Row 1 seat 4");
+  assert.equal(tile(ctx, "Row 4").label, "Row 1 seat 4");
+  ctx.lab.sendCmd("29", "ping"); // no session: no throw
 });
 
-test("acceptOffer twice back-to-back before gathering completes: first settles, second resolves for ws 2", async () => {
+test("acceptOffer twice back-to-back before gathering completes: first settles, second resolves", async () => {
   const ctx = make();
-  const p1 = ctx.lab.acceptOffer(offer(2));
-  const p2 = ctx.lab.acceptOffer(offer(2));
+  const p1 = ctx.lab.acceptOffer(offer("2"));
+  const p2 = ctx.lab.acceptOffer(offer("2"));
   const settled = await Promise.race([
     p1.then(
       () => "settled",
@@ -142,25 +237,35 @@ test("acceptOffer twice back-to-back before gathering completes: first settles, 
   await assert.rejects(p1, SupersededError);
   ctx.rtc.last().completeGathering();
   const answer = await p2;
-  assert.equal(answer.ws, 2);
+  assert.equal(answer.ws, "2");
+  assert.equal(
+    tile(ctx, "2").replaced,
+    false,
+    "superseding a still-gathering scan is not a takeover",
+  );
 });
 
-test("setLabel rejects an over-long label without mutating the roster", () => {
+test("setLabel rejects an over-long label without mutating the roster", async () => {
   const ctx = make();
-  const ok = ctx.lab.setLabel(4, "x".repeat(65));
-  assert.equal(ok, false);
-  assert.equal(ctx.lab.snapshot()[3]?.label, undefined);
+  await pair(ctx, "4");
+  assert.equal(ctx.lab.setLabel("4", "x".repeat(65)), false);
+  assert.equal(tile(ctx, "4").label, undefined);
+});
+
+test("setLabel on an unknown station creates no tile", () => {
+  const ctx = make();
+  assert.equal(ctx.lab.setLabel("ghost", "boo"), false);
+  assert.deepEqual(ctx.lab.snapshot(), []);
 });
 
 test("updateSettings rejects an invalid patch without mutating settings", () => {
   const ctx = make();
   const before = ctx.lab.settings;
-  const ok = ctx.lab.updateSettings({ heartbeatMs: 100 });
-  assert.equal(ok, false);
+  assert.equal(ctx.lab.updateSettings({ heartbeatMs: 100 }), false);
   assert.deepEqual(ctx.lab.settings, before);
 });
 
-test("persist never throws even if the KeyValueStore.set throws", () => {
+test("persist never throws even if the KeyValueStore.set throws", async () => {
   const lab = new LabController({
     rtc: new FakeRtcFactory(),
     clock: new FakeClock(),
@@ -174,145 +279,126 @@ test("persist never throws even if the KeyValueStore.set throws", () => {
     appVersion: "v1",
     ua: "mac",
   });
-  const ok = lab.setLabel(4, "Row 1 seat 4");
-  assert.equal(ok, true);
-  assert.equal(lab.snapshot()[3]?.label, "Row 1 seat 4");
+  const p = lab.acceptOffer(offer("4"));
+  await flush();
+  assert.equal(lab.snapshot()[0]?.ws, "4");
+  void p;
 });
 
 test("pairCount counts pairings, not ICE recoveries", async () => {
   const ctx = make();
-  await pair(ctx, 1);
+  await pair(ctx, "1");
   const pc = ctx.rtc.last();
   pc.setIce("disconnected");
   pc.setIce("connected");
-  assert.equal(ctx.lab.snapshot()[0]?.state, "connected");
-  const saved = JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
-    roster: Record<string, { pairCount: number }>;
-  };
-  assert.equal(saved.roster["1"]?.pairCount, 1);
+  assert.equal(tile(ctx, "1").state, "connected");
+  assert.equal(saved(ctx).roster["1"]?.pairCount, 1);
 });
 
 test("history is capped at 50 entries; snapshot() returns a fresh copy each time", async () => {
   const ctx = make();
-  await pair(ctx, 1);
+  await pair(ctx, "1");
   const pc = ctx.rtc.last();
   for (let i = 0; i < 30; i++) {
     pc.setIce("disconnected");
     pc.setIce("connected");
   }
-  const tile = ctx.lab.snapshot()[0]!;
-  assert.equal(tile.history.length, 50);
-  const a = ctx.lab.snapshot()[0]!.history;
-  const b = ctx.lab.snapshot()[0]!.history;
-  assert.notEqual(a, b);
+  assert.equal(tile(ctx, "1").history.length, 50);
+  assert.notEqual(tile(ctx, "1").history, tile(ctx, "1").history);
 });
 
 test("counts", async () => {
   const ctx = make();
-  await pair(ctx, 1);
-  const c = ctx.lab.counts();
-  assert.deepEqual(c, { connected: 1, degraded: 0, failed: 0, never: 29 });
+  await pair(ctx, "1");
+  await pair(ctx, "2");
+  ctx.rtc.pcs[1]!.channels.at(-1)!.close();
+  assert.deepEqual(ctx.lab.counts(), { connected: 1, degraded: 0, failed: 1, never: 0 });
 });
 
 test("fingerprint continuity: same cert → unchanged, different cert → flagged", async () => {
   const ctx = make();
-  await pair(ctx, 3);
-  const first = ctx.lab.snapshot()[2]!;
+  await pair(ctx, "3");
+  const first = tile(ctx, "3");
   assert.equal(first.fingerprintChanged, false, "no previous pairing to differ from");
   assert.match(first.fingerprint!, /^7B:8B:F0:65(:[0-9A-F]{2})+$/);
-  assert.equal(JSON.parse(ctx.kv.get(TEACHER_KEY)!).roster["3"].lastFingerprint, first.fingerprint);
+  assert.equal(saved(ctx).roster["3"]?.lastFingerprint, first.fingerprint);
 
-  await pair(ctx, 3); // same iPad, same persisted certificate
-  assert.equal(ctx.lab.snapshot()[2]?.fingerprintChanged, false);
+  await pair(ctx, "3");
+  assert.equal(tile(ctx, "3").fingerprintChanged, false);
 
-  const swapped = { ...offer(3), fp: new Uint8Array(32).fill(0xab) };
+  const swapped = { ...offer("3"), fp: new Uint8Array(32).fill(0xab) };
   const p = ctx.lab.acceptOffer(swapped);
   await flush();
   ctx.rtc.last().completeGathering();
   await p;
-  const tile = ctx.lab.snapshot()[2]!;
-  assert.equal(tile.fingerprintChanged, true);
-  assert.equal(tile.fingerprint, new Array(32).fill("AB").join(":"));
-});
-
-test("history survives a re-pair", async () => {
-  const ctx = make();
-  const { dc } = await pair(ctx, 6);
-  dc.close();
-  const before = ctx.lab.snapshot()[5]!.history.map((h) => h.state);
-  assert.deepEqual(before.slice(-2), ["connected", "failed"]);
-  await pair(ctx, 6);
-  const after = ctx.lab.snapshot()[5]!.history.map((h) => h.state);
-  assert.deepEqual(after.slice(0, before.length), before, "earlier states are kept");
-  assert.deepEqual(after.slice(before.length), ["gathering", "connecting", "connected"]);
+  const t = tile(ctx, "3");
+  assert.equal(t.fingerprintChanged, true);
+  assert.equal(t.fingerprint, new Array(32).fill("AB").join(":"));
 });
 
 test("lastFingerprint is persisted only once acceptOffer's answer resolves", async () => {
   const ctx = make();
-  await pair(ctx, 3);
-  const saved = () =>
-    (
-      JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
-        roster: Record<string, { lastFingerprint?: string }>;
-      }
-    ).roster["3"]?.lastFingerprint;
-  const first = saved();
+  await pair(ctx, "3");
+  const first = saved(ctx).roster["3"]?.lastFingerprint;
   assert.match(first!, /^7B:8B:F0:65/);
-
-  const swapped = { ...offer(3), fp: new Uint8Array(32).fill(0xab) };
+  const swapped = { ...offer("3"), fp: new Uint8Array(32).fill(0xab) };
   const p = ctx.lab.acceptOffer(swapped);
   await flush();
-  assert.equal(saved(), first, "still the previous pairing while gathering");
+  assert.equal(
+    saved(ctx).roster["3"]?.lastFingerprint,
+    first,
+    "still the previous pairing while gathering",
+  );
   ctx.rtc.last().completeGathering();
   await p;
-  assert.equal(saved(), new Array(32).fill("AB").join(":"));
+  assert.equal(saved(ctx).roster["3"]?.lastFingerprint, new Array(32).fill("AB").join(":"));
 });
 
 test("a superseded acceptOffer never writes its fingerprint", async () => {
   const ctx = make();
-  await pair(ctx, 2);
-  const stored = () =>
-    (
-      JSON.parse(ctx.kv.get(TEACHER_KEY)!) as {
-        roster: Record<string, { lastFingerprint?: string }>;
-      }
-    ).roster["2"]?.lastFingerprint;
-  const original = stored();
-  const p1 = ctx.lab.acceptOffer({ ...offer(2), fp: new Uint8Array(32).fill(0xab) });
-  const p2 = ctx.lab.acceptOffer(offer(2)); // the real iPad again; supersedes the 0xAB scan
+  await pair(ctx, "2");
+  const original = saved(ctx).roster["2"]?.lastFingerprint;
+  const p1 = ctx.lab.acceptOffer({ ...offer("2"), fp: new Uint8Array(32).fill(0xab) });
+  const p2 = ctx.lab.acceptOffer(offer("2"));
   await assert.rejects(p1, SupersededError);
   await flush();
   ctx.rtc.last().completeGathering();
   await p2;
-  assert.equal(stored(), original);
-  assert.equal(
-    ctx.lab.snapshot()[1]?.fingerprintChanged,
-    false,
-    "compared against the last pairing that actually answered, not the abandoned scan",
-  );
+  assert.equal(saved(ctx).roster["2"]?.lastFingerprint, original);
+  assert.equal(tile(ctx, "2").fingerprintChanged, false);
+});
+
+test("history survives a re-pair", async () => {
+  const ctx = make();
+  const { dc } = await pair(ctx, "6");
+  dc.close();
+  const before = tile(ctx, "6").history.map((h) => h.state);
+  assert.deepEqual(before.slice(-2), ["connected", "failed"]);
+  await pair(ctx, "6");
+  const after = tile(ctx, "6").history.map((h) => h.state);
+  assert.deepEqual(after.slice(0, before.length), before, "earlier states are kept");
+  assert.deepEqual(after.slice(before.length), ["gathering", "connecting", "connected"]);
 });
 
 test("lastSeenAt tracks the latest inbound frame; lastConnectedAt stays the pairing time", async () => {
   const ctx = make();
-  const { dc } = await pair(ctx, 5);
-  const paired = ctx.lab.snapshot()[4]!;
-  assert.equal(paired.lastSeenAt, paired.lastConnectedAt, "nothing heard yet beyond the handshake");
+  const { dc } = await pair(ctx, "5");
+  const paired = tile(ctx, "5");
+  assert.equal(paired.lastSeenAt, paired.lastConnectedAt);
   ctx.clock.advance(7000);
   dc.receive(JSON.stringify({ t: "hb-ack", seq: 1, ts: 0 }));
-  const tile = ctx.lab.snapshot()[4]!;
-  assert.equal(tile.lastSeenAt, 7000);
-  assert.equal(tile.lastConnectedAt, paired.lastConnectedAt);
+  const t = tile(ctx, "5");
+  assert.equal(t.lastSeenAt, 7000);
+  assert.equal(t.lastConnectedAt, paired.lastConnectedAt);
   ctx.clock.advance(1000);
-  ctx.lab.sendCmd(5, "ping");
-  assert.equal(ctx.lab.snapshot()[4]!.lastSeenAt, 7000, "outbound traffic is not 'seen'");
+  ctx.lab.sendCmd("5", "ping");
+  assert.equal(tile(ctx, "5").lastSeenAt, 7000, "outbound traffic is not 'seen'");
 });
 
 test("lastSeenAt is persisted at most once a minute while chatty, and on degraded/failed", async () => {
   const ctx = make();
-  const { dc } = await pair(ctx, 6);
-  const stored = () =>
-    (JSON.parse(ctx.kv.get(TEACHER_KEY)!) as { roster: Record<string, { lastSeenAt?: number }> })
-      .roster["6"]?.lastSeenAt;
+  const { dc } = await pair(ctx, "6");
+  const stored = () => saved(ctx).roster["6"]?.lastSeenAt;
   const hb = () => dc.receive(JSON.stringify({ t: "hb-ack", seq: 1, ts: 0 }));
   assert.equal(stored(), 0, "pairing itself records a sighting");
   for (let i = 0; i < 11; i++) {
@@ -320,27 +406,60 @@ test("lastSeenAt is persisted at most once a minute while chatty, and on degrade
     hb();
   }
   assert.equal(stored(), 0, "55 s of heartbeats: no write yet");
-  assert.equal(ctx.lab.snapshot()[5]!.lastSeenAt, 55_000, "the live value is always current");
+  assert.equal(tile(ctx, "6").lastSeenAt, 55_000);
   ctx.clock.advance(5000);
   hb();
   assert.equal(stored(), 60_000, "first write once a minute has passed");
   ctx.clock.advance(5000);
   hb();
   assert.equal(stored(), 60_000, "then quiet again");
-
-  // Silence: the miss check runs on the 5 s tick and needs > degradedMs, so 20 s → degraded.
+  // The miss check runs on the 5 s tick and needs > degradedMs, so 20 s → degraded.
   ctx.clock.advance(20_000);
-  assert.equal(ctx.lab.snapshot()[5]!.state, "degraded");
+  assert.equal(tile(ctx, "6").state, "degraded");
   assert.equal(stored(), 65_000, "degraded persists the last sighting");
 });
 
-test("a never-paired tile reports the persisted lastSeenAt from an earlier run", () => {
-  const rtc = new FakeRtcFactory();
+test("a never-paired tile reports persisted metadata from an earlier run", () => {
   const kv = new MemoryKv();
   kv.set(
     TEACHER_KEY,
-    JSON.stringify({ roster: { "9": { pairCount: 1, lastSeenAt: 1234, lastConnectedAt: 1000 } } }),
+    JSON.stringify({
+      roster: { "row 9": { ws: "Row 9", pairCount: 1, lastSeenAt: 1234, lastConnectedAt: 1000 } },
+    }),
   );
-  const lab = new LabController({ rtc, clock: new FakeClock(), kv, appVersion: "v1", ua: "mac" });
-  assert.equal(lab.snapshot()[8]!.lastSeenAt, 1234);
+  const ctx = make(kv);
+  const t = tile(ctx, "row 9");
+  assert.equal(t.state, "never");
+  assert.equal(t.ws, "Row 9");
+  assert.equal(t.lastSeenAt, 1234);
+  assert.deepEqual(ctx.lab.repairQueue(), ["Row 9"], "known but not live: walk there");
+  assert.deepEqual(ctx.lab.counts(), { connected: 0, degraded: 0, failed: 0, never: 1 });
+});
+
+test("a v1 teacher blob is migrated on first boot and removed; labels survive", () => {
+  const kv = new MemoryKv();
+  kv.set(
+    LEGACY_TEACHER_KEY,
+    JSON.stringify({
+      roster: { "7": { label: "Row 1 seat 7", pairCount: 2 } },
+      settings: { heartbeatMs: 1000, degradedMs: 2000, failedMs: 3000 },
+    }),
+  );
+  const ctx = make(kv);
+  assert.equal(tile(ctx, "7").label, "Row 1 seat 7");
+  assert.equal(ctx.lab.settings.heartbeatMs, 1000);
+  assert.equal(saved(ctx).roster["7"]?.ws, "7");
+  assert.equal(kv.get(LEGACY_TEACHER_KEY), null);
+});
+
+test("when v2 exists, v1 is ignored and removed", () => {
+  const kv = new MemoryKv();
+  kv.set(TEACHER_KEY, JSON.stringify({ roster: { a: { ws: "A", pairCount: 1 } } }));
+  kv.set(LEGACY_TEACHER_KEY, JSON.stringify({ roster: { "7": { pairCount: 9 } } }));
+  const ctx = make(kv);
+  assert.deepEqual(
+    ctx.lab.snapshot().map((t) => t.ws),
+    ["A"],
+  );
+  assert.equal(kv.get(LEGACY_TEACHER_KEY), null);
 });
