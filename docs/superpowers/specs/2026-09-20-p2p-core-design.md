@@ -1,6 +1,6 @@
 # Learning Lab P2P — Phase 1 Core Design
 
-**Status:** approved design, pre-implementation
+**Status:** shipped (Phase 1). **Amended by** [2026-09-21-variable-workstation-ids-design.md](2026-09-21-variable-workstation-ids-design.md): `ws` becomes a typed string ID, the roster is dynamic, and a repeated ID takes over. Where the two disagree, the amendment wins.
 **Date:** 2026-09-20
 **Scope:** Phase 1 only — QR-signaled WebRTC DataChannel connectivity between one teacher station and up to 30 fixed student iPads, with heartbeat monitoring and re-pair flow. Media (Phase 2+) is designed *for* but not built.
 

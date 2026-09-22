@@ -1,6 +1,6 @@
 # AGENTS.md — Learning Lab P2P
 
-Instructions for AI coding agents and humans working in this repo. Read the current spec before touching code: [docs/superpowers/specs/2026-09-20-p2p-core-design.md](docs/superpowers/specs/2026-09-20-p2p-core-design.md).
+Instructions for AI coding agents and humans working in this repo. Read the current spec before touching code: [docs/superpowers/specs/2026-09-20-p2p-core-design.md](docs/superpowers/specs/2026-09-20-p2p-core-design.md), as amended by [docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md](docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md).
 
 ## What this is
 
