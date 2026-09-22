@@ -76,7 +76,8 @@ test("v1 blobs are migrated on the first v2 boot and then removed", async ({ bro
   });
   const teacher = await ctx.newPage();
   await teacher.goto("/teacher");
-  await expect(teacher.locator(`${tile("7")} .meta`).first()).toHaveText("Row 1 seat 7");
+  // Direct child, not `.thumb`'s nested placeholder span, which is also `.meta` (Task 11).
+  await expect(teacher.locator(`${tile("7")} > .meta`).first()).toHaveText("Row 1 seat 7");
   await expect(teacher.locator("[data-queue-ws='7']")).toBeVisible();
   const teacherKeys = await teacher.evaluate(() => ({
     v2: localStorage.getItem("lab.teacher.v2"),
