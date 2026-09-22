@@ -1794,7 +1794,7 @@ test("tapping the ID in the status bar lets the student fix a typo; the new ID g
   const input = page.locator("[data-ws-input]");
   await expect(input).toHaveValue("Rwo2");
   await page.locator("[data-ws-cancel]").click();
-  await expect(page.locator(".bar .ws")).toHaveText("Rwo2", "cancel changes nothing");
+  await expect(page.locator(".bar .ws")).toHaveText("Rwo2");
 
   await page.locator("[data-ws-change]").click();
   await input.fill("Row2");
@@ -1806,7 +1806,7 @@ test("tapping the ID in the status bar lets the student fix a typo; the new ID g
   await expectState(page, "#student", "awaiting-remote");
 
   await page.goto("/student");
-  await expect(page.locator(".bar .ws")).toHaveText("Row2", "the fix is remembered");
+  await expect(page.locator(".bar .ws")).toHaveText("Row2");
   await ctx.close();
 });
 
@@ -2246,7 +2246,7 @@ test("a second iPad pairing under the same ID (any case) takes over; the tile fl
   await pair(t.page, b.page, "row2");
   await expect(t.page.locator("[data-tile]")).toHaveCount(1);
   await expectState(t.page, tile("row2"), "connected");
-  await expect(t.page.locator(`${tile("row2")} .num`)).toHaveText("row2", "latest spelling wins");
+  await expect(t.page.locator(`${tile("row2")} .num`)).toHaveText("row2");
   await expect(t.page.locator(`${tile("row2")} [data-replaced]`)).toBeVisible();
   // The kicked iPad loses its session and offers a fresh code on its own.
   await expect(a.page.locator("#student")).toHaveAttribute("data-state", /failed|awaiting-remote/);
