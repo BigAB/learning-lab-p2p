@@ -11,6 +11,7 @@ Run before the first lab day of a semester and after any app deploy, iPad OS upd
 - [ ] If adding by hand from Safari: open `/student?ws=<ID>` first, then "Add to Home Screen". The installed app has its own storage, so the ID must come from the URL or be typed once inside the app.
 - [ ] Phone with `/courier` open; screen brightness up.
 - [ ] Teacher header and every iPad status bar show the **same `appVersion`**.
+- [ ] Teacher Mac on **Ethernet** if the room has a port (30 video streams in and out cross one access point otherwise). Note the AP model.
 
 ## 1. Network sanity (do this first)
 - [ ] Pair one station only. If it never leaves `connecting`, the LAN is blocking P2P UDP (client isolation / AP isolation) — or the teacher Mac's firewall is on (§0). Stop and talk to IT; nothing else will work.
@@ -28,9 +29,17 @@ Run before the first lab day of a semester and after any app deploy, iPad OS upd
 - [ ] Force-quit the Home Screen app on one iPad, relaunch → new offer, re-pair succeeds.
 - [ ] Send `cmd: reload` from a tile drawer → iPad reloads and shows offer.
 
+## 3b. Media
+- [ ] Teacher: **Cameras on** → every green tile shows video within 10 s. Any tile reading "no video (older build)" is a stale Home Screen app: reload that iPad.
+- [ ] Click one thumbnail → focus pane shows a readable face; `[data-focus-stats]` reads ≥ 360p.
+- [ ] **Share screen** → every iPad shows it; text on a terminal window is legible. **Stop sharing** → every iPad back to Ready.
+- [ ] **Share camera** → every iPad shows the teacher. Header shows "⚠ N CPU-limited" only transiently; if it stays > 0, note N and the Mac's Activity Monitor CPU.
+- [ ] Cameras off → every iPad's "● Camera on" pill disappears.
+
 ## 4. Soak
 - [ ] Leave every station connected overnight. Next morning: count greens, note any `status.visibility: hidden` or wake-lock-lost events in tile drawers.
 - [ ] Takeover: pair a station, then pair a second iPad under the same ID → one tile, "↺ replaced" badge, first iPad shows a fresh offer. Remove it from the drawer → tile gone; re-pair → tile back.
+- [ ] Cameras on for two hours. Note any tile that goes to "camera error" (thermal) and whether the Mac's fans came on.
 
 ## 5. Sign-off
 Date · appVersion · greens after soak · notes.

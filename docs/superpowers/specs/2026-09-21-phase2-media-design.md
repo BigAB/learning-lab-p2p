@@ -1,6 +1,6 @@
 # Learning Lab P2P — Phase 2 Bidirectional Media
 
-**Status:** approved design, pre-implementation
+**Status:** approved design, implemented
 **Date:** 2026-09-21
 **Builds on:** [2026-09-20-p2p-core-design.md](2026-09-20-p2p-core-design.md) as amended by [2026-09-21-variable-workstation-ids-design.md](2026-09-21-variable-workstation-ids-design.md). Nothing in those documents is changed except where this one says so. Roster is dynamic; every layout and every budget below is a function of `tiles.length`, never a constant.
 **Scope:** live video in both directions over the Phase 1 peer connections. Student → teacher: one low-rate thumbnail per station in the dashboard grid, with a per-station "focus" that raises one station's quality. Teacher → students: one outbound video track (the teacher's camera **or** screen) fanned out to every connected station. Renegotiation carries full SDP over the DataChannel. No audio (§3.1).
@@ -149,16 +149,17 @@ unsupported                      failed ──teacher "Retry video" (drawer)─�
 - An offer arriving while the student is not `stable`, or an answer whose `seq` is not the in-flight one, is ignored and counted (rule 4).
 - `failed` records a reason string shown in the drawer. Retry is a teacher action only; there is no automatic retry, because the likely causes (engine incompatibility, exhausted decoder) do not fix themselves and a loop would spam the DataChannel.
 - Session `failed` (Phase 1) tears media down with it: the student stops its capture track, the teacher forgets the remote stream. A re-pair starts at `none`.
+- `applyRequest` before `ready` is a no-op.
 
 ### 4.6 What each side does when `ready`
 
 Teacher:
-- Keeps `rx.receiver.track` wrapped in a `new MediaStream([track])` (the student attaches its track with `replaceTrack`, so `ontrack` may carry no stream). This is the tile's thumbnail source.
+- Keeps `rx.receiver.track` as `MediaLink.remoteTrack` (a bare `MediaStreamTrack`; the student attaches its track with `replaceTrack`, so `ontrack` may carry no stream, and core never relies on one). This is the tile's thumbnail source.
 - If a broadcast is active, `tx.sender.replaceTrack(broadcastTrack)` + `setParameters(fanoutProfile)` and sends `media.broadcast { on: true, source }`. Otherwise sends `media.broadcast { on: false }`.
 - Sends `media.request { send: thumb }` if Cameras is on (or `focus` if this station is focused), else `{ send: null }`.
 
 Student:
-- Keeps the receive transceiver's track wrapped in a `MediaStream`; the UI mounts it while `media.broadcast.on` is true.
+- Keeps the receive transceiver's track as `MediaLink.remoteTrack`; the UI mounts it while `media.broadcast.on` is true.
 - Applies each `media.request` (§5.2) and replies `media.status`.
 
 ---
@@ -188,7 +189,7 @@ Defaults (all in `settings.media`, §8):
 The broadcast profile for the current source is applied identically to every `tx.sender` via `setParameters` (plus `degradationPreference` per §1.3). It is applied when a link becomes `ready`, when the broadcast starts, and when the source switches. The teacher does not scale by `tiles.length`; the per-source ceilings are chosen for 30 and Chrome's adaptation handles anything beyond. A lab that wants sharper broadcast on fewer stations edits the settings.
 
 ### 5.4 Focus
-`LabController.focus(ws | null)`. At most one station is focused. Focusing station B while A is focused sends A `thumb` (or `null` if Cameras is off) and B `focus`. Focus works with Cameras off: it turns on exactly one camera. The focus pane and B's tile show the same `MediaStream`. Losing B's session clears focus.
+`LabController.focus(ws | null)`. At most one station is focused. Focusing station B while A is focused sends A `thumb` (or `null` if Cameras is off) and B `focus`. Focus works with Cameras off: it turns on exactly one camera. The focus pane and B's tile show the same track. Losing B's session clears focus.
 
 ---
 
@@ -211,7 +212,7 @@ Rules unchanged from Phase 1 §5.3: every inbound frame Zod-parsed before core; 
 
 ## 7. Core architecture
 
-Rule 1 (framework-free core), rule 3 (UI never touches the PC) and rule 6 (injectable timers) all hold. DOM *types* (`MediaStreamTrack`, `RTCRtpTransceiver`, `RTCStatsReport`) are allowed in core exactly as `RTCPeerConnection` already is; DOM *globals* are not, so capture goes through a port.
+Rule 1 (framework-free core), rule 3 (UI never touches the PC) and rule 6 (injectable timers) all hold. DOM *types* (`MediaStreamTrack`, `RTCRtpTransceiver`, `RTCStatsReport`) are allowed in core exactly as `RTCPeerConnection` already is; DOM *globals* are not, so capture goes through a port. Core hands out tracks; `<VideoView>` in `src/ui/shared/` is the only place a `MediaStream` is constructed, so core never touches that global.
 
 ### 7.1 New port: `MediaPort` (`src/core/ports.ts`)
 ```ts
@@ -223,12 +224,12 @@ interface MediaPort {
 Browser implementation `src/ui/platform/browserMedia.ts` wraps `getUserMedia` / `getDisplayMedia`, sets `contentHint` (`"motion"` / `"detail"`), and stops the audio tracks `getDisplayMedia` may hand back. `LabController.startBroadcast("screen")` calls the port before its first `await` so Chrome's user-activation requirement is met from the button's click handler. Unit tests use `FakeMediaPort` returning `FakeMediaStreamTrack`s.
 
 ### 7.2 `MediaLink` (`src/core/mediaLink.ts`) — one per `PeerSession`
-Owns the two transceivers, the negotiation state (§4.5), the remote `MediaStream`, and the send-side profile. Constructed by `PeerSession` when the session reaches `connected` **and** both `hello`s have been exchanged; it receives the `pc`, a `send(m: MediaMessage)` function, a `Clock` and the timers. `PeerSession` routes `media.*` frames to it and exposes it as `session.media`. `PeerSession.teardown()` calls `media.close()`, which stops any capture track it started and clears handlers.
+Owns the two transceivers, the negotiation state (§4.5), the remote track, and the send-side profile. Constructed by `PeerSession` at DataChannel open, before its own `hello` goes out; the capability gate is applied by `LabController` when the student's `hello` arrives. It receives the `pc`, a `send(m: MediaMessage)` function, a `Clock` and the timers. `PeerSession` routes `media.*` frames to it and exposes it as `session.media`. `PeerSession.teardown()` calls `media.close()`, which stops any capture track it started and clears handlers.
 
-Events: `state: [MediaState, reason?]`, `remoteStream: [MediaStream]`, `status: [MediaStatusMessage]` (teacher side), `broadcast: [MediaBroadcastMessage]` (student side).
+Events: `state: [MediaState, reason?]`, `remoteTrack: [MediaStreamTrack]`, `status: [MediaStatusMessage]` (teacher side), `broadcast: [MediaBroadcastMessage]` (student side).
 
 Teacher-side API: `offer(codec)`, `setOutbound(track | null, profile | null)`, `request(profile | null)`, `stats(): Promise<MediaStatsView>`.
-Student-side API: `applyRequest(send, port)` (called by `StudentController`, which owns the port), `remoteStream`.
+Student-side API: `applyRequest(send, port)` (called by `StudentController`, which owns the port), `remoteTrack`.
 
 Keeping this out of `PeerSession` keeps the Phase 1 state machine and its 40-odd tests untouched; `PeerSession` gains only the `caps` field in `hello`, a `media` property, a route for `media.*` frames and the teardown call.
 
@@ -239,11 +240,12 @@ Keeping this out of `PeerSession` keeps the Phase 1 state machine and its 40-odd
 - `retryMedia(ws)`: allowed only from `failed`.
 - Stats: while any link is `ready` and (Cameras on or broadcasting), poll `getStats()` every `statsMs` (2 s, injectable) per link, off the `change` path; aggregate `cpuLimited` count and per-station inbound fps/height into `RosterView.media`.
 - On each link's `ready`: apply broadcast track + profile, send `media.broadcast`, send the station's current `media.request`.
-- `RosterView.media: { state: MediaState; reason?: string; cam: "off" | "on" | "error"; send: Profile | null; stream?: MediaStream; inFps?: number; inHeight?: number; outCpuLimited?: boolean; encoder?: string }`.
+- A link only counts as ready to push/pull media while its session is `connected` or `degraded`; a `failed` session's link is never read, so `snapshot()` reports `media.state: "none"` for it even though `MediaLink.close()` never flips `.state` off `"ready"`.
+- `RosterView.media: { state: MediaState; reason?: string; cam: "off" | "on" | "error"; send: Profile | null; track?: MediaStreamTrack; inFps?: number; inHeight?: number; outCpuLimited?: boolean; encoder?: string }`.
 
 ### 7.4 `StudentController` additions
 - Owns `MediaPort`; on `session.media.request` → `applyRequest`; emits `media` view changes.
-- `StudentMediaView: { state: MediaState; cam; send: Profile | null; teacherStream?: MediaStream; broadcast: { on: boolean; source?: "camera" | "screen" } }` exposed through `useStudent()`.
+- `StudentMediaView: { state: MediaState; cam; send: Profile | null; teacherTrack?: MediaStreamTrack; broadcast: { on: boolean; source?: "camera" | "screen" } }` exposed through `useStudent()`.
 - Stops capture on `stop()`, on session `failed`, and on `media.request { send: null }`. The camera is never on without a live, ready session that asked for it.
 
 ### 7.5 Fakes (`test/unit/helpers/fakeRtc.ts`)
@@ -281,10 +283,10 @@ Timers, injectable, not persisted: `mediaOfferMs` 10 000, `statsMs` 2 000.
 
 ### 9.2 Teacher (Mac)
 - Header gains: **Cameras** toggle (`data-action="cameras"`), **Share camera** / **Share screen** / **Stop sharing** (`data-action="share-camera" | "share-screen" | "share-stop"`, one visible set), and a media summary "📷 n on · ⚠ k CPU-limited" that appears only while media is active (`data-media-summary`).
-- Tile: a 16:9 thumbnail (`<video>` bound to `media.stream`) above the Phase 1 meta lines while `cam === "on"`; otherwise a placeholder strip with the reason: "camera off", "camera error: …", "no video (older build)", "video failed: …" (`data-media-state`). Grid `minmax` widens to 200 px so the video is legible. Clicking the thumbnail toggles focus; clicking anywhere else opens the drawer as today.
+- Tile: a 16:9 thumbnail (`<VideoView track={media.track}>`) above the Phase 1 meta lines while `cam === "on"`; otherwise a placeholder strip with the reason: "camera off", "camera error: …", "no video (older build)", "video failed: …" (`data-media-state`). Grid `minmax` widens to 200 px so the video is legible. Clicking the thumbnail toggles focus; clicking anywhere else opens the drawer as today.
 - Focus pane: `<section data-focus>` above the grid, 16:9, `max-height: 50vh`, the station's ID and a Close button; Escape closes. One at a time.
 - Drawer gains a media block: state + reason, encoder implementation, in/out fps and height, `cpuLimited`, **Focus**/**Unfocus** and **Retry video** (only when `failed`).
-- All rendering from `useLabRoster()`; a shared `<VideoView stream>` component owns `srcObject`. The UI never sees a transceiver.
+- All rendering from `useLabRoster()`; a shared `<VideoView track>` component owns `srcObject`. The UI never sees a transceiver.
 
 ### 9.3 Courier
 Unchanged. Media never touches the QR path.
@@ -295,7 +297,7 @@ Unchanged. Media never touches the QR path.
 
 ### 10.1 Unit (`node:test`)
 - `schemas/media.test.ts`: valid + invalid fixtures for all five messages and `Profile`; `hello` with and without `caps`; oversize `sdp` rejected; unknown `media.*` `t` ignored by `LabMessageSchema`.
-- `core/mediaLink.test.ts` against the fakes: teacher offer creates exactly two transceivers with the right directions; codec preference ordering (`orderCodecs(caps, pref)` pure function); student answer sets `sendonly` on the offered-`recvonly` transceiver only; `seq` mismatch ignored; offer in non-`stable` state ignored and counted; `mediaOfferMs` → `failed`; `setRemoteDescription` rejection → `failed` with reason; `close()` stops the capture track; `ready` emits `remoteStream`.
+- `core/mediaLink.test.ts` against the fakes: teacher offer creates exactly two transceivers with the right directions; codec preference ordering (`orderCodecs(caps, pref)` pure function); student answer sets `sendonly` on the offered-`recvonly` transceiver only; `seq` mismatch ignored; offer in non-`stable` state ignored and counted; `mediaOfferMs` → `failed`; `setRemoteDescription` rejection → `failed` with reason; `close()` stops the capture track; `ready` emits `remoteTrack`.
 - `core/labController.test.ts` additions: offer sent only when `hello.caps` has `"media"`, else `unsupported`; `setCameras` requests to every `ready` link; `focus` swap sends the right profiles to the right stations and clears on session failure; `startBroadcast` calls `replaceTrack` + `setParameters` on every `ready` link and on links that become `ready` later; track `ended` → `stopBroadcast` and `media.broadcast {on:false}` to all; `retryMedia` refused unless `failed`; stats aggregation from a scripted `getStats`.
 - `core/studentController.test.ts` additions: `applyRequest` thumb → capture once, `setParameters` with `scaleResolutionDownBy 4`; focus → `1`; `setParameters` rejection → `applyConstraints` fallback; `null` → track stopped; port rejection → `media.status {cam:"error"}`; session `failed` stops capture; `scaleFor` table.
 - `core/peerSession.test.ts` additions: `hello` carries `caps`; `media.*` frames routed to the link; teardown closes it. Existing tests unchanged.
@@ -334,7 +336,7 @@ Iframes use Chromium's fake camera (`--use-fake-device-for-media-stream`; every 
 | AP airtime with 31 clients streaming | Mac on Ethernet; thumbnails at 150 kbps; broadcast ceilings; the lab checklist measures it on day one |
 | iPads throttle after hours with the camera on | Cameras default off; `media.status {cam:"error"}` surfaces dropouts; soak item in the checklist |
 | Camera on without the student knowing | Capture only on a live, ready session that asked for it; stopped on any failure; visible "● Camera on" pill |
-| `getDisplayMedia` picker refused / cancelled | `startBroadcast` rejects, UI shows "Sharing cancelled", state unchanged |
+| `getDisplayMedia` picker refused / cancelled | `startBroadcast` rejects; UI shows "Sharing cancelled" only for a `NotAllowedError`, otherwise "Sharing failed: <reason>"; state unchanged |
 
 ---
 
