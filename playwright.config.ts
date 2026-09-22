@@ -36,7 +36,7 @@ export default defineConfig({
     },
     {
       name: "webkit",
-      testMatch: /codec\.spec\.ts/,
+      testMatch: /codec\.spec\.ts|media-renegotiation\.spec\.ts/,
       // WebKit filters ICE candidates until a getUserMedia grant lands (the codec spec primes it),
       // otherwise it gathers nothing at all and there is no SDP to round-trip.
       use: { ...devices["Desktop Safari"], permissions: ["camera"] },
