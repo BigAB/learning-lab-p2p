@@ -9,6 +9,14 @@ export const SAFARI_ANSWER = readFileSync(
   new URL("../../fixtures/sdp/safari-answer.sdp", import.meta.url),
   "utf8",
 );
+export const CHROME_MEDIA_OFFER = readFileSync(
+  new URL("../../fixtures/sdp/chrome-media-offer.sdp", import.meta.url),
+  "utf8",
+);
+export const SAFARI_MEDIA_ANSWER = readFileSync(
+  new URL("../../fixtures/sdp/safari-media-answer.sdp", import.meta.url),
+  "utf8",
+);
 
 /**
  * A gathering result with nothing usable in it: the only host candidate is 169.254 link-local,
@@ -47,6 +55,84 @@ export class FakeDataChannel {
   }
 }
 
+let trackSeq = 0;
+
+export class FakeMediaStreamTrack {
+  readonly kind = "video";
+  readonly id = `track-${++trackSeq}`;
+  readyState: MediaStreamTrackState = "live";
+  stopped = false;
+  contentHint = "";
+  settings: MediaTrackSettings = { width: 1280, height: 720, frameRate: 15 };
+  constraintsApplied: MediaTrackConstraints[] = [];
+  onended: (() => void) | null = null;
+  getSettings(): MediaTrackSettings {
+    return { ...this.settings };
+  }
+  stop(): void {
+    this.stopped = true;
+    this.readyState = "ended";
+  }
+  async applyConstraints(c: MediaTrackConstraints): Promise<void> {
+    this.constraintsApplied.push(c);
+  }
+  /** Simulate the device going away (unplugged camera, screen share ended from the browser bar). */
+  end(): void {
+    this.readyState = "ended";
+    this.onended?.();
+  }
+  asTrack(): MediaStreamTrack {
+    return this as unknown as MediaStreamTrack;
+  }
+}
+
+export class FakeRtpSender {
+  track: MediaStreamTrack | null = null;
+  replaceTrackCalls: (MediaStreamTrack | null)[] = [];
+  setParametersCalls: RTCRtpSendParameters[] = [];
+  rejectSetParameters: Error | undefined;
+  params: RTCRtpSendParameters = {
+    encodings: [{}],
+    transactionId: "fake",
+    codecs: [],
+    headerExtensions: [],
+    rtcp: {},
+  };
+  getParameters(): RTCRtpSendParameters {
+    return { ...this.params, encodings: this.params.encodings.map((e) => ({ ...e })) };
+  }
+  async setParameters(p: RTCRtpSendParameters): Promise<void> {
+    if (this.rejectSetParameters) throw this.rejectSetParameters;
+    this.params = p;
+    this.setParametersCalls.push(p);
+  }
+  async replaceTrack(t: MediaStreamTrack | null): Promise<void> {
+    this.track = t;
+    this.replaceTrackCalls.push(t);
+  }
+  /** encodings[0] as last set, for assertions. */
+  encoding(): RTCRtpEncodingParameters {
+    return this.params.encodings[0] ?? {};
+  }
+}
+
+export class FakeTransceiver {
+  readonly kind = "video";
+  currentDirection: RTCRtpTransceiverDirection | null = null;
+  readonly sender = new FakeRtpSender();
+  readonly receiver: { track: FakeMediaStreamTrack } = { track: new FakeMediaStreamTrack() };
+  codecPrefs: RTCRtpCodec[] | undefined;
+  constructor(
+    public mid: string | null,
+    public direction: RTCRtpTransceiverDirection,
+  ) {}
+  setCodecPreferences(c: RTCRtpCodec[]): void {
+    this.codecPrefs = c;
+  }
+}
+
+const MID_LINE = /^a=mid:(\S+)/m;
+
 export class FakeRTCPeerConnection {
   localDescription: RTCSessionDescriptionInit | null = null;
   remoteDescription: RTCSessionDescriptionInit | null = null;
@@ -57,6 +143,11 @@ export class FakeRTCPeerConnection {
   ondatachannel: ((ev: { channel: FakeDataChannel }) => void) | null = null;
   channels: FakeDataChannel[] = [];
   closed = false;
+  signalingState: RTCSignalingState = "stable";
+  transceivers: FakeTransceiver[] = [];
+  statsReport = new Map<string, Record<string, unknown>>();
+  rejectSetRemote: Error | undefined;
+  rejectCreateOffer: Error | undefined;
   constructor(
     public readonly config: RTCConfiguration,
     private readonly offerSdp: string = CHROME_OFFER,
@@ -66,17 +157,46 @@ export class FakeRTCPeerConnection {
     this.channels.push(dc);
     return dc;
   }
+  addTransceiver(kind: string, init?: RTCRtpTransceiverInit): FakeTransceiver {
+    if (kind !== "video") throw new Error("fake supports video only");
+    const t = new FakeTransceiver(
+      String(this.transceivers.length + 1),
+      init?.direction ?? "sendrecv",
+    );
+    this.transceivers.push(t);
+    return t;
+  }
+  getTransceivers(): FakeTransceiver[] {
+    return [...this.transceivers];
+  }
+  async getStats(): Promise<RTCStatsReport> {
+    return this.statsReport as unknown as RTCStatsReport;
+  }
   async createOffer(): Promise<RTCSessionDescriptionInit> {
-    return { type: "offer", sdp: this.offerSdp };
+    if (this.rejectCreateOffer) throw this.rejectCreateOffer;
+    return { type: "offer", sdp: this.transceivers.length ? CHROME_MEDIA_OFFER : this.offerSdp };
   }
   async createAnswer(): Promise<RTCSessionDescriptionInit> {
-    return { type: "answer", sdp: SAFARI_ANSWER };
+    return { type: "answer", sdp: this.transceivers.length ? SAFARI_MEDIA_ANSWER : SAFARI_ANSWER };
   }
   async setLocalDescription(d: RTCSessionDescriptionInit): Promise<void> {
     this.localDescription = d;
+    this.signalingState = d.type === "offer" ? "have-local-offer" : "stable";
+    if (d.type === "answer") for (const t of this.transceivers) t.currentDirection = t.direction;
   }
   async setRemoteDescription(d: RTCSessionDescriptionInit): Promise<void> {
+    if (this.rejectSetRemote) throw this.rejectSetRemote;
     this.remoteDescription = d;
+    this.signalingState = d.type === "offer" ? "have-remote-offer" : "stable";
+    if (d.type === "offer" && d.sdp) {
+      // Like a real PC: each unseen m=video section gets a recvonly transceiver.
+      for (const sec of d.sdp.split(/\r?\n(?=m=video)/).slice(1)) {
+        const mid = MID_LINE.exec(sec)?.[1];
+        if (mid && !this.transceivers.some((t) => t.mid === mid))
+          this.transceivers.push(new FakeTransceiver(mid, "recvonly"));
+      }
+    }
+    if (d.type === "answer") for (const t of this.transceivers) t.currentDirection = t.direction;
   }
   close(): void {
     if (this.closed) return;
@@ -113,6 +233,23 @@ export class FakeRtcFactory implements RtcFactory {
     const pc = this.pcs[this.pcs.length - 1];
     if (!pc) throw new Error("no pc created");
     return pc;
+  }
+  videoCodecs(): RTCRtpCodec[] {
+    return [
+      { mimeType: "video/VP8", clockRate: 90000 },
+      { mimeType: "video/rtx", clockRate: 90000, sdpFmtpLine: "apt=96" },
+      {
+        mimeType: "video/H264",
+        clockRate: 90000,
+        sdpFmtpLine: "level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=42e01f",
+      },
+      {
+        mimeType: "video/H264",
+        clockRate: 90000,
+        sdpFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+      },
+      { mimeType: "video/VP9", clockRate: 90000 },
+    ];
   }
 }
 
