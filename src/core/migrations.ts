@@ -5,7 +5,7 @@ import {
   LegacyTeacherStateSchema,
 } from "../schemas/legacy";
 import type { StudentState, TeacherState } from "../schemas/storage";
-import { wsKey } from "../schemas/ws";
+import { WsSchema, wsKey } from "../schemas/ws";
 import type { KeyValueStore } from "./ports";
 
 type Log = (msg: string) => void;
@@ -36,11 +36,21 @@ export function migrateStudentV1(kv: KeyValueStore, log: Log): StudentState | un
   return { ...rest, ws: String(ws) };
 }
 
-/** v1 `roster["7"] = {…}` → v2 `roster["7"] = { ws: "7", … }`; settings copied. */
+/**
+ * v1 `roster["7"] = {…}` → v2 `roster["7"] = { ws: "7", … }`; settings copied. A v1 key that is
+ * no longer a legal workstation ID (e.g. too long) is skipped and logged rather than letting one
+ * bad key poison the whole migrated blob.
+ */
 export function migrateTeacherV1(kv: KeyValueStore, log: Log): TeacherState | undefined {
   const v1 = readLegacy(kv, LEGACY_TEACHER_KEY, (j) => LegacyTeacherStateSchema.safeParse(j), log);
   if (!v1) return undefined;
   const roster: TeacherState["roster"] = {};
-  for (const [k, entry] of Object.entries(v1.roster)) roster[wsKey(k)] = { ...entry, ws: k };
+  for (const [k, entry] of Object.entries(v1.roster)) {
+    if (!WsSchema.safeParse(k).success) {
+      log(`${LEGACY_TEACHER_KEY}: skipping roster key "${k}" — not a legal workstation ID`);
+      continue;
+    }
+    roster[wsKey(k)] = { ...entry, ws: k };
+  }
   return { roster, settings: v1.settings };
 }

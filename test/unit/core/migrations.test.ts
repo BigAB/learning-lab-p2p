@@ -34,6 +34,31 @@ test("teacher v1 → v2: roster keyed by wsKey with a display ws, labels kept, s
   assert.equal(v2.settings.failedMs, 3000);
 });
 
+test("teacher v1 → v2: an illegal roster key is skipped, not left to poison the whole blob", () => {
+  const kv = new MemoryKv();
+  const badKey = "x".repeat(30);
+  kv.set(
+    LEGACY_TEACHER_KEY,
+    JSON.stringify({
+      roster: {
+        "7": { label: "Row 1 seat 7", pairCount: 2 },
+        [badKey]: { label: "Too long", pairCount: 1 },
+      },
+      settings: { heartbeatMs: 1000, degradedMs: 2000, failedMs: 3000 },
+    }),
+  );
+  const logs: string[] = [];
+  const v2 = migrateTeacherV1(kv, (m) => logs.push(m))!;
+  assert.deepEqual(v2.roster, {
+    "7": { ws: "7", label: "Row 1 seat 7", pairCount: 2 },
+  });
+  assert.equal(v2.settings.heartbeatMs, 1000);
+  assert.equal(v2.settings.failedMs, 3000);
+  assert.deepEqual(logs, [
+    `${LEGACY_TEACHER_KEY}: skipping roster key "${badKey}" — not a legal workstation ID`,
+  ]);
+});
+
 test("unparseable v1 → undefined plus one log line; absent v1 → undefined, silent", () => {
   const kv = new MemoryKv();
   const logs: string[] = [];
