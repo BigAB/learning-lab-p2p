@@ -7,7 +7,8 @@ import { TEACHER_KEY } from "../../../src/schemas/storage";
 import { wsKey } from "../../../src/schemas/ws";
 import { FakeClock } from "../helpers/fakeClock";
 import { MemoryKv } from "../helpers/memoryKv";
-import { CHROME_OFFER, FakeRtcFactory, flush } from "../helpers/fakeRtc";
+import { CHROME_OFFER, FakeRtcFactory, SAFARI_MEDIA_ANSWER, flush } from "../helpers/fakeRtc";
+import { FakeMediaPort } from "../helpers/fakeMedia";
 
 const offer = (ws: string) => extractPayload(CHROME_OFFER, "offer", ws);
 
@@ -48,7 +49,7 @@ function saved(ctx: ReturnType<typeof make>) {
         label?: string;
       }
     >;
-    settings: { heartbeatMs: number };
+    settings: { heartbeatMs: number; media: { cameras: boolean } };
   };
 }
 
@@ -462,4 +463,254 @@ test("when v2 exists, v1 is ignored and removed", () => {
     ["A"],
   );
   assert.equal(kv.get(LEGACY_TEACHER_KEY), null);
+});
+
+const thumb = { height: 180, fps: 10, kbps: 150 };
+const focusP = { height: 720, fps: 15, kbps: 1200 };
+
+function makeMedia(kv = new MemoryKv()) {
+  const rtc = new FakeRtcFactory();
+  const clock = new FakeClock();
+  const media = new FakeMediaPort();
+  const lab = new LabController({
+    rtc,
+    clock,
+    kv,
+    appVersion: "v1",
+    ua: "mac",
+    media,
+    statsMs: 2000,
+  });
+  return { rtc, clock, kv, lab, media };
+}
+
+const hello = (caps?: string[]) =>
+  JSON.stringify({
+    t: "hello",
+    role: "student",
+    ws: "x",
+    appVersion: "v1",
+    ua: "ipad",
+    ...(caps ? { caps } : {}),
+  });
+
+/** Pair, deliver a hello with media caps, answer the teacher's offer → link ready. */
+async function pairMedia(ctx: ReturnType<typeof makeMedia>, ws: string) {
+  const { dc } = await pair(ctx, ws);
+  const pc = ctx.rtc.last();
+  dc.receive(hello(["media"]));
+  await flush();
+  dc.receive(JSON.stringify({ t: "media.answer", seq: 1, sdp: SAFARI_MEDIA_ANSWER }));
+  await flush();
+  return { dc, pc, sent: () => dc.sentJson() as { t: string; [k: string]: unknown }[] };
+}
+
+test("hello with media caps → offer sent; without → unsupported", async () => {
+  const ctx = makeMedia();
+  const a = await pair(ctx, "A");
+  a.dc.receive(hello(["media"]));
+  await flush();
+  assert.equal(
+    a.dc.sentJson().some((m) => (m as { t: string }).t === "media.offer"),
+    true,
+  );
+  assert.equal(tile(ctx, "A").media.state, "negotiating");
+  const b = await pair(ctx, "B");
+  b.dc.receive(hello());
+  await flush();
+  assert.equal(tile(ctx, "B").media.state, "unsupported");
+  assert.equal(tile(ctx, "B").media.reason, "older build");
+  assert.equal(
+    b.dc.sentJson().some((m) => (m as { t: string }).t === "media.offer"),
+    false,
+  );
+});
+
+test("ready link: broadcast off, request null by default; track exposed on the tile", async () => {
+  const ctx = makeMedia();
+  const { sent } = await pairMedia(ctx, "A");
+  const t = tile(ctx, "A");
+  assert.equal(t.media.state, "ready");
+  assert.ok(t.media.track);
+  const after = sent().filter((m) => m.t.startsWith("media.") && m.t !== "media.offer");
+  assert.deepEqual(after, [
+    { t: "media.broadcast", on: false },
+    { t: "media.request", send: null },
+  ]);
+});
+
+test("setCameras persists and pushes thumb / null to every ready link", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  const b = await pairMedia(ctx, "B");
+  ctx.lab.setCameras(true);
+  assert.equal(saved(ctx).settings.media.cameras, true);
+  for (const s of [a, b]) assert.deepEqual(s.sent().at(-1), { t: "media.request", send: thumb });
+  ctx.lab.setCameras(false);
+  for (const s of [a, b]) assert.deepEqual(s.sent().at(-1), { t: "media.request", send: null });
+  // A link that becomes ready while cameras are on is asked for thumb immediately.
+  ctx.lab.setCameras(true);
+  const c = await pairMedia(ctx, "C");
+  assert.deepEqual(c.sent().at(-1), { t: "media.request", send: thumb });
+});
+
+test("focus swaps profiles between stations and clears when the station fails", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  const b = await pairMedia(ctx, "B");
+  ctx.lab.focus("a");
+  assert.equal(ctx.lab.focused, "a");
+  assert.deepEqual(a.sent().at(-1), { t: "media.request", send: focusP });
+  ctx.lab.focus("B");
+  assert.deepEqual(a.sent().at(-1), { t: "media.request", send: null });
+  assert.deepEqual(b.sent().at(-1), { t: "media.request", send: focusP });
+  ctx.lab.focus("nobody");
+  assert.equal(ctx.lab.focused, "b");
+  b.dc.close();
+  assert.equal(ctx.lab.focused, undefined);
+  ctx.lab.focus("A");
+  ctx.lab.focus(null);
+  assert.deepEqual(a.sent().at(-1), { t: "media.request", send: null });
+  assert.equal(ctx.lab.focused, undefined);
+});
+
+test("media.status updates the tile", async () => {
+  const ctx = makeMedia();
+  const { dc } = await pairMedia(ctx, "A");
+  dc.receive(JSON.stringify({ t: "media.status", cam: "on", send: thumb }));
+  assert.equal(tile(ctx, "A").media.cam, "on");
+  assert.deepEqual(tile(ctx, "A").media.send, thumb);
+  dc.receive(
+    JSON.stringify({ t: "media.status", cam: "error", reason: "NotAllowedError", send: null }),
+  );
+  assert.equal(tile(ctx, "A").media.cam, "error");
+  assert.equal(tile(ctx, "A").media.reason, "NotAllowedError");
+});
+
+test("startBroadcast(camera) captures, attaches to every ready link, and notifies students", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  await ctx.lab.startBroadcast("camera");
+  assert.equal(ctx.lab.broadcast.source, "camera");
+  assert.deepEqual(ctx.media.cameraCalls, [{ width: 1280, height: 720, frameRate: 15 }]);
+  const sender = a.pc.getTransceivers()[0]!.sender;
+  assert.equal(sender.track, ctx.media.last().asTrack());
+  assert.deepEqual(sender.encoding(), {
+    scaleResolutionDownBy: 2,
+    maxFramerate: 15,
+    maxBitrate: 600_000,
+  });
+  assert.equal(
+    (sender.params as { degradationPreference?: string }).degradationPreference,
+    "balanced",
+  );
+  assert.deepEqual(a.sent().at(-1), { t: "media.broadcast", on: true, source: "camera" });
+  // A station that becomes ready later gets the track too.
+  const b = await pairMedia(ctx, "B");
+  assert.equal(b.pc.getTransceivers()[0]!.sender.track, ctx.media.last().asTrack());
+  assert.deepEqual(b.sent().slice(-2)[0], { t: "media.broadcast", on: true, source: "camera" });
+});
+
+test("startBroadcast(screen) uses the screen profile; switching stops the old track", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  await ctx.lab.startBroadcast("camera");
+  const cam = ctx.media.last();
+  await ctx.lab.startBroadcast("screen");
+  assert.equal(cam.stopped, true);
+  assert.equal(ctx.media.screenCalls, 1);
+  const sender = a.pc.getTransceivers()[0]!.sender;
+  assert.deepEqual(sender.encoding(), {
+    scaleResolutionDownBy: 2,
+    maxFramerate: 5,
+    maxBitrate: 1_000_000,
+  });
+  assert.equal(
+    (sender.params as { degradationPreference?: string }).degradationPreference,
+    "maintain-resolution",
+  );
+  assert.deepEqual(a.sent().at(-1), { t: "media.broadcast", on: true, source: "screen" });
+});
+
+test("stopBroadcast and track ended both detach and notify", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  await ctx.lab.startBroadcast("camera");
+  ctx.lab.stopBroadcast();
+  assert.equal(ctx.lab.broadcast.source, null);
+  assert.equal(ctx.media.last().stopped, true);
+  assert.equal(a.pc.getTransceivers()[0]!.sender.track, null);
+  assert.deepEqual(a.sent().at(-1), { t: "media.broadcast", on: false });
+  await ctx.lab.startBroadcast("screen");
+  ctx.media.last().end();
+  assert.equal(ctx.lab.broadcast.source, null);
+  assert.deepEqual(a.sent().at(-1), { t: "media.broadcast", on: false });
+});
+
+test("startBroadcast rejects when the port rejects and changes nothing", async () => {
+  const ctx = makeMedia();
+  await pairMedia(ctx, "A");
+  ctx.media.rejectScreen = new Error("NotAllowedError: cancelled");
+  await assert.rejects(ctx.lab.startBroadcast("screen"), /cancelled/);
+  assert.equal(ctx.lab.broadcast.source, null);
+});
+
+test("retryMedia re-offers only from failed", async () => {
+  const ctx = makeMedia();
+  const { dc } = await pair(ctx, "A");
+  dc.receive(hello(["media"]));
+  await flush();
+  assert.equal(ctx.lab.retryMedia("A"), false);
+  ctx.clock.advance(10_000);
+  assert.equal(tile(ctx, "A").media.state, "failed");
+  assert.equal(ctx.lab.retryMedia("A"), true);
+  await flush();
+  assert.equal(tile(ctx, "A").media.state, "negotiating");
+  const offers = dc.sentJson().filter((m) => (m as { t: string }).t === "media.offer") as {
+    seq: number;
+  }[];
+  assert.deepEqual(
+    offers.map((o) => o.seq),
+    [1, 2],
+  );
+  assert.equal(ctx.lab.retryMedia("nobody"), false);
+});
+
+test("stats are polled only while media is active, and land on the tile", async () => {
+  const ctx = makeMedia();
+  const { pc } = await pairMedia(ctx, "A");
+  pc.statsReport.set("i", {
+    type: "inbound-rtp",
+    kind: "video",
+    frameHeight: 180,
+    framesDecoded: 5,
+  });
+  ctx.clock.advance(4000);
+  await flush();
+  assert.equal(tile(ctx, "A").media.stats, undefined);
+  ctx.lab.setCameras(true);
+  ctx.clock.advance(2000);
+  await flush();
+  assert.equal(tile(ctx, "A").media.stats?.inHeight, 180);
+  ctx.lab.setCameras(false);
+  pc.statsReport.set("i", {
+    type: "inbound-rtp",
+    kind: "video",
+    frameHeight: 360,
+    framesDecoded: 9,
+  });
+  ctx.clock.advance(4000);
+  await flush();
+  assert.equal(tile(ctx, "A").media.stats?.inHeight, 180);
+});
+
+test("remove() clears focus and a fresh pairing starts with media none", async () => {
+  const ctx = makeMedia();
+  await pairMedia(ctx, "A");
+  ctx.lab.focus("A");
+  ctx.lab.remove("A");
+  assert.equal(ctx.lab.focused, undefined);
+  await pair(ctx, "A");
+  assert.equal(tile(ctx, "A").media.state, "none");
+  assert.equal(tile(ctx, "A").media.cam, "off");
 });
