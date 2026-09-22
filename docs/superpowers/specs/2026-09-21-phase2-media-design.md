@@ -348,6 +348,7 @@ Recorded here so they are not lost; none blocks Phase 2.
 
 | Item | Note |
 |---|---|
-| `/dev/load` measurement results | Fill in after the first Mac run (§11.1) with `encoderImplementation`, CPU %, and whether the defaults held at 30 |
+| `/dev/load` measurement, run 1 (2026-09-22, MacBook, Chrome, 30 iframes, Cameras on + one Focus, **Share screen** of a ~584 px-tall mostly static window, 5 min) | `encoderImplementation` = **OpenH264** on all 30 senders (software; Chrome on macOS did not use VideoToolbox). **No row ever showed `qualityLimitationReason: "cpu"`** — the §11.1 pass bar held with the defaults. Teacher out: 584p @ ~1 fps (static content). In: 29 × 180p @ 10 fps, 1 × 720p @ 15 fps (focused); ≈ 3 350 frames decoded per thumbnail in 5 min. Activity Monitor: Chrome renderer ≈ 93 % of one core for the whole single-machine run (30 student encoders + 30 teacher encoders + 60 decoders). See run 2 for camera broadcast. |
+| `/dev/load` measurement, run 2 (2026-09-22, same Mac, 30 iframes, Cameras on, **Share camera**, 5 min) | `encoderImplementation` = OpenH264 on all 30 senders. Teacher out: **360p @ 15 fps to every station** (the `broadcastCamera` ceiling, delivered in full). In: 30 × 180p @ 10 fps; ≈ 2 650 frames decoded per thumbnail in 5 min (≈ 9 fps). **No `⚠` (no `qualityLimitationReason: "cpu"`) on any row for the whole run.** Verdict: the §1.2 budget holds at 30 with software H.264 in the double-counted single-machine setup; the defaults (§5.1, §8) ship unchanged. |
 | Audio transceivers | If a remote-classroom use ever appears, add `audio` transceivers in the same single offer and gate with a `caps` entry |
 | Phase 2b encode-once fan-out | Only if §11.1 fails after tuning; §1.5 sketches it |
