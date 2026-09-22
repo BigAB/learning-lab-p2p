@@ -292,19 +292,34 @@ button.secondary {
 .pill-camerr {
   background: var(--amber);
 }
+/* Student page: header on top, main takes the rest. The header's real height decides the
+   split (the ws label is clamp()-sized), so nothing here hard-codes it. */
+#student {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+#student > .bar {
+  flex: none;
+}
+#student > main.center {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+#student > main.stage {
+  padding: 0;
+  gap: 0;
+}
 .teacher-video {
-  position: fixed;
-  top: 72px;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: calc(100% - 72px);
   object-fit: contain;
   background: #000;
 }
 .caption {
-  position: fixed;
+  position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
