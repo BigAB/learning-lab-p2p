@@ -177,6 +177,24 @@ test("student: setRemoteDescription rejection → failed, nothing sent", async (
   assert.equal(sent.length, 0);
 });
 
+test("student: a throwing state listener cannot land the link in failed", async () => {
+  const { link, sent } = makeLink("student");
+  link.on("state", (s) => {
+    if (s === "ready") throw new Error("controller bug");
+  });
+  const error = console.error;
+  console.error = () => {}; // the isolated error is logged; keep the test output clean
+  try {
+    link.handle({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER });
+    await flush();
+  } finally {
+    console.error = error;
+  }
+  assert.equal(link.state, "ready");
+  assert.equal(link.reason, undefined);
+  assert.equal(sent.at(-1)?.t, "media.answer");
+});
+
 test("routing: request → student event; status → teacher event; broadcast → student event", async () => {
   const s = makeLink("student");
   const reqs: unknown[] = [];

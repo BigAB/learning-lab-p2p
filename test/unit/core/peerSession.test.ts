@@ -364,7 +364,13 @@ test("a throwing state listener does not suppress side effects", async () => {
   s.on("state", () => {
     throw new Error("boom");
   });
-  assert.throws(() => dc.close());
+  const error = console.error;
+  console.error = () => {}; // the isolated error is logged; keep the test output clean
+  try {
+    assert.doesNotThrow(() => dc.close());
+  } finally {
+    console.error = error;
+  }
   assert.equal(reasons.length, 1);
   assert.equal(s.state, "failed");
 });
@@ -529,7 +535,10 @@ test("a second dc open is inert: one hello, one MediaLink, one heartbeat", async
   // Two Heartbeats would send two hb frames per interval.
   const before = dc.sent.length;
   clock.advance(TIMERS.heartbeatMs);
-  const hbs = dc.sentJson().slice(before).filter((m) => (m as { t: string }).t === "hb");
+  const hbs = dc
+    .sentJson()
+    .slice(before)
+    .filter((m) => (m as { t: string }).t === "hb");
   assert.equal(hbs.length, 1);
 });
 
