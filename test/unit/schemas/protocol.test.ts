@@ -11,6 +11,7 @@ test("accepts every phase-1 message", () => {
     { t: "status", battery: 0.5, charging: false, visibility: "hidden", wakeLock: false },
     { t: "cmd", cmd: "reload" },
     { t: "chunk", id: "abc", i: 0, n: 2, data: "xx" },
+    { t: "hello", role: "teacher", ws: "7", appVersion: "abc1234", ua: "Chrome", caps: ["media"] },
   ];
   for (const m of ok) assert.equal(LabMessageSchema.safeParse(m).success, true, JSON.stringify(m));
 });
