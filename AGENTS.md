@@ -19,6 +19,7 @@ Roles by pathname: `/student?ws=ID`, `/teacher`, `/courier`, `/dev/load`.
 - **Signaling is a pluggable interface.** `SignalingTransport` in core; `QrCourierTransport` now, GitHub dead-drop later. `PeerSession` must never know which.
 - **Media: video only, teacher is the sole offerer, negotiate once.** No audio. The teacher sends one `media.offer` per session (two video transceivers); after that only `replaceTrack` and `setParameters`. Quality never renegotiates. Media failures never fail the session.
 - **Capture only while asked.** A student's camera is on only while a ready link has a non-null `media.request`; any failure stops it. Cameras default off.
+- **Cameras-off is fire-and-forget over the DataChannel.** A degraded station keeps its camera until its session tears down (≤ 60 s); there is no acknowledgement to wait for and no retry.
 
 ## Stack
 
@@ -63,6 +64,7 @@ pnpm build          # vite build → dist/
 - Fixtures: `test/fixtures/sdp/` — real captured SDPs from Safari and Chrome. Add one when you see a new browser variant.
 - Manual: `docs/lab-checklist.md` before any lab day.
 - Media e2e (`media.spec.ts`) reads `window.__lab.mediaStats(ws)` / `window.__lab.activeTracks()` (dev-only). `media-renegotiation.spec.ts` runs in **both** engines and guards the SDP template against the media offer; a WebKit failure there is fixed in `buildSdp`, not in `MediaLink`.
+- Media `failed` recovers only via the drawer's **Retry video** (`retryMedia`), never on a repeated `hello`: the teacher offers once per session, from `none` only. Tests that expect a re-offer must go through `retryMedia`.
 
 ## Deploy
 

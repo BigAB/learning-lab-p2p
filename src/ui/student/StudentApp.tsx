@@ -103,6 +103,10 @@ function StudentView({
     [showToast],
   );
 
+  const up = view.state === "connected" || view.state === "degraded";
+  // `stage` on <main>: the teacher's video fills whatever the header leaves, no fixed offsets.
+  const showingTeacher = up && media.broadcast.on && media.teacherTrack !== undefined;
+
   return (
     <div id="student" data-state={view.state} data-cam={media.cam}>
       <header className="bar">
@@ -150,7 +154,7 @@ function StudentView({
           onCancel={() => setEditing(false)}
         />
       ) : (
-        <main className="center">
+        <main className={showingTeacher ? "center stage" : "center"}>
           {view.state === "awaiting-remote" && view.localWire && !scanning && (
             <>
               <QrView wire={view.localWire} role="offer" ws={c.ws} />
@@ -168,8 +172,8 @@ function StudentView({
             </>
           )}
           {view.state === "connecting" && <h2>Connecting…</h2>}
-          {(view.state === "connected" || view.state === "degraded") &&
-            (media.broadcast.on && media.teacherTrack ? (
+          {up &&
+            (showingTeacher && media.teacherTrack ? (
               <>
                 <VideoView
                   track={media.teacherTrack}

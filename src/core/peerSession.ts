@@ -201,6 +201,9 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
 
   private onOpen(): void {
     if (this.done) return;
+    // A channel only opens once, but a stray second onopen must not start a second Heartbeat
+    // (double hb traffic) or replace the MediaLink the controller already wired.
+    if (this.hb) return;
     this.clearConnectTimer();
     this.hb = new Heartbeat({
       clock: this.opts.clock,
@@ -335,7 +338,11 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   }
 
   private teardown(): void {
-    this.media?.close();
+    try {
+      this.media?.close();
+    } catch {
+      /* media is best-effort; the session must still die cleanly */
+    }
     this.clearConnectTimer();
     if (this.degradedTimer !== undefined) this.opts.clock.clearTimeout(this.degradedTimer);
     this.degradedTimer = undefined;

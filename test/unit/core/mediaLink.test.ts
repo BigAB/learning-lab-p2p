@@ -177,6 +177,24 @@ test("student: setRemoteDescription rejection → failed, nothing sent", async (
   assert.equal(sent.length, 0);
 });
 
+test("student: a throwing state listener cannot land the link in failed", async () => {
+  const { link, sent } = makeLink("student");
+  link.on("state", (s) => {
+    if (s === "ready") throw new Error("controller bug");
+  });
+  const error = console.error;
+  console.error = () => {}; // the isolated error is logged; keep the test output clean
+  try {
+    link.handle({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER });
+    await flush();
+  } finally {
+    console.error = error;
+  }
+  assert.equal(link.state, "ready");
+  assert.equal(link.reason, undefined);
+  assert.equal(sent.at(-1)?.t, "media.answer");
+});
+
 test("routing: request → student event; status → teacher event; broadcast → student event", async () => {
   const s = makeLink("student");
   const reqs: unknown[] = [];
@@ -284,6 +302,15 @@ test("stats picks the video outbound/inbound rtp entries", async () => {
   });
   pc.statsReport.clear();
   assert.deepEqual(await link.stats(), { cpuLimited: false });
+});
+
+test("stats: a rejecting getStats() yields the empty view, never a rejection", async () => {
+  const { pc, link } = await readyTeacher();
+  pc.getStats = async () => {
+    throw new Error("InvalidStateError: connection closed");
+  };
+  assert.deepEqual(await link.stats(), { cpuLimited: false });
+  assert.equal(link.state, "ready");
 });
 
 test("close cancels the offer timer and refuses further work", async () => {
@@ -421,6 +448,33 @@ test("student: requests are serialised; the last one wins", async () => {
   assert.equal(link.cam, "off");
   assert.equal(sender.replaceTrackCalls.at(-1), null);
   assert.equal(port.last().stopped, true);
+});
+
+test("student: a repeated null request while already off sends no second media.status", async () => {
+  const { link, port, sent } = await readyStudent();
+  await link.applyRequest(null, port);
+  const after = sent.length;
+  await link.applyRequest(null, port);
+  assert.equal(sent.length, after, "identical off → off must not resend media.status");
+  // A real change still reports.
+  await link.applyRequest(thumb, port);
+  assert.deepEqual(sent.at(-1), { t: "media.status", cam: "on", send: thumb });
+});
+
+test("student: an unexpected throw inside applyRequest resolves, and is reported as ignored", async () => {
+  const { link, port, ignored } = await readyStudent();
+  await link.applyRequest(thumb, port);
+  // stopCapture() runs outside every try: a track whose stop() blows up is an unexpected throw.
+  port.last().stop = () => {
+    throw new Error("stop exploded");
+  };
+  await link.applyRequest(null, port);
+  assert.equal(ignored.length, 1);
+  assert.match(ignored[0]!, /applyRequest: stop exploded/);
+  // The queue is not wedged: the next request still runs.
+  port.last().stop = () => {};
+  await link.applyRequest(thumb, port);
+  assert.equal(link.cam, "on");
 });
 
 test("student: request before ready is ignored; close stops the capture", async () => {

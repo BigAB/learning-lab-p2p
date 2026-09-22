@@ -7,7 +7,13 @@ import { TEACHER_KEY } from "../../../src/schemas/storage";
 import { wsKey } from "../../../src/schemas/ws";
 import { FakeClock } from "../helpers/fakeClock";
 import { MemoryKv } from "../helpers/memoryKv";
-import { CHROME_OFFER, FakeRtcFactory, SAFARI_MEDIA_ANSWER, flush } from "../helpers/fakeRtc";
+import {
+  CHROME_OFFER,
+  FakeMediaStreamTrack,
+  FakeRtcFactory,
+  SAFARI_MEDIA_ANSWER,
+  flush,
+} from "../helpers/fakeRtc";
 import { FakeMediaPort } from "../helpers/fakeMedia";
 
 const offer = (ws: string) => extractPayload(CHROME_OFFER, "offer", ws);
@@ -312,7 +318,21 @@ test("counts", async () => {
   const ctx = make();
   await pair(ctx, "1");
   await pair(ctx, "2");
+  await pair(ctx, "3");
   ctx.rtc.pcs[1]!.channels.at(-1)!.close();
+  ctx.rtc.pcs[2]!.setIce("disconnected");
+  assert.deepEqual(ctx.lab.counts(), { connected: 1, degraded: 1, failed: 1, never: 0 });
+});
+
+test("counts() reads session state directly; it does not build a snapshot on every stats tick", async () => {
+  const ctx = make();
+  await pair(ctx, "1");
+  await pair(ctx, "2");
+  ctx.rtc.pcs[1]!.channels.at(-1)!.close();
+  const lab = ctx.lab as unknown as { snapshot: () => unknown };
+  lab.snapshot = () => {
+    throw new Error("snapshot() must not be called from counts()");
+  };
   assert.deepEqual(ctx.lab.counts(), { connected: 1, degraded: 0, failed: 1, never: 0 });
 });
 
@@ -657,6 +677,27 @@ test("stopBroadcast and track ended both detach and notify", async () => {
   ctx.media.last().end();
   assert.equal(ctx.lab.broadcast.source, null);
   assert.deepEqual(a.sent().at(-1), { t: "media.broadcast", on: false });
+});
+
+test("overlapping startBroadcast calls: the latest call wins even if it settles first", async () => {
+  const ctx = makeMedia();
+  const a = await pairMedia(ctx, "A");
+  // Hold the camera grant open so a later screen pick can land before it.
+  let grantCamera!: (t: MediaStreamTrack) => void;
+  const camTrack = new FakeMediaStreamTrack();
+  ctx.media.camera = () => new Promise<MediaStreamTrack>((r) => (grantCamera = r));
+  const cam = ctx.lab.startBroadcast("camera");
+  const scr = ctx.lab.startBroadcast("screen");
+  await scr;
+  assert.equal(ctx.lab.broadcast.source, "screen");
+  const screenTrack = ctx.media.last();
+  grantCamera(camTrack.asTrack());
+  await cam; // the loser resolves quietly; it is not an error the UI should show
+  assert.equal(ctx.lab.broadcast.source, "screen", "an earlier call must not overtake a later one");
+  assert.equal(ctx.lab.broadcast.track, screenTrack.asTrack());
+  assert.equal(camTrack.stopped, true, "the loser's track is released");
+  assert.equal(screenTrack.stopped, false);
+  assert.equal(a.pc.getTransceivers()[0]!.sender.track, screenTrack.asTrack());
 });
 
 test("startBroadcast rejects when the port rejects and changes nothing", async () => {

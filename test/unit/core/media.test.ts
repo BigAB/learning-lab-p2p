@@ -83,6 +83,46 @@ test("offeredDirections reads mid → direction for every m= section", () => {
   assert.equal(offeredDirections("v=0\r\na=sendonly\r\n").size, 0);
 });
 
+test("offeredDirections handles CRLF line endings across several m= sections", () => {
+  const crlf = [
+    "v=0",
+    "o=- 1 2 IN IP4 127.0.0.1",
+    "s=-",
+    "t=0 0",
+    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+    "a=mid:0",
+    "a=sctp-port:5000",
+    "m=video 9 UDP/TLS/RTP/SAVPF 96",
+    "a=mid:1",
+    "a=sendonly",
+    "m=video 9 UDP/TLS/RTP/SAVPF 96",
+    "a=mid:2",
+    "a=recvonly",
+    "m=video 9 UDP/TLS/RTP/SAVPF 96",
+    "a=mid:3",
+    "a=inactive",
+    "",
+  ].join("\r\n");
+  const d = offeredDirections(crlf);
+  assert.deepEqual(
+    [...d.entries()],
+    [
+      ["1", "sendonly"],
+      ["2", "recvonly"],
+      ["3", "inactive"],
+    ],
+  );
+});
+
+test("offeredDirections trims trailing whitespace on a=mid and direction lines", () => {
+  const sdp =
+    "v=0\nm=video 9 RTP/AVP 96\na=mid:7 \t\na=sendrecv \nm=video 9 RTP/AVP 96\na=mid: 8\na=recvonly\n";
+  const d = offeredDirections(sdp);
+  assert.equal(d.get("7"), "sendrecv");
+  assert.equal(d.get("8"), "recvonly");
+  assert.equal(d.size, 2);
+});
+
 test("applyEncoding merges into encodings[0] and sets degradationPreference", async () => {
   const calls: RTCRtpSendParameters[] = [];
   const sender = {
