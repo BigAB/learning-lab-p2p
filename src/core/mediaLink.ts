@@ -76,6 +76,8 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
   remoteTrack: MediaStreamTrack | undefined;
   /** Student side: what our camera is doing. */
   cam: CamState = "off";
+  /** Student side: why `cam` is "error", if it is. Undefined once cam is "on"/"off". */
+  camReason: string | undefined;
   sending: Profile | null = null;
   lastStatus: MediaStatusMessage | undefined;
   lastBroadcast: MediaBroadcastMessage | undefined;
@@ -352,6 +354,7 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
       }
     }
     const track = this.captureTrack;
+    if (!track) return;
     try {
       await applyEncoding(sender, encodingFor(send, track.getSettings().height));
     } catch {
@@ -369,12 +372,18 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
 
   private report(reason?: string): void {
     if (this.closed) return;
-    this.opts.send({
-      t: "media.status",
-      cam: this.cam,
-      send: this.sending,
-      ...(reason ? { reason } : {}),
-    });
+    const bounded = reason ? reason.slice(0, 200) : undefined;
+    this.camReason = this.cam === "error" ? bounded : undefined;
+    try {
+      this.opts.send({
+        t: "media.status",
+        cam: this.cam,
+        send: this.sending,
+        ...(bounded ? { reason: bounded } : {}),
+      });
+    } catch {
+      /* a status we cannot send is not worth a crash */
+    }
     this.emit("capture", this.cam);
   }
 

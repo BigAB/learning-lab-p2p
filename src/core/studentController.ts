@@ -32,6 +32,8 @@ export interface StudentEnv {
 export interface StudentMediaView {
   state: MediaState;
   cam: CamState;
+  /** Why `cam` is "error", if it is (spec §9.1). */
+  reason?: string;
   send: Profile | null;
   /** The teacher's video, once negotiated. Shown only while broadcast.on. */
   teacherTrack?: MediaStreamTrack;
@@ -131,6 +133,7 @@ export class StudentController extends Emitter<StudentEvents> {
       send: live?.sending ?? null,
       broadcast: { on: b?.on ?? false, ...(b?.source ? { source: b.source } : {}) },
     };
+    if (live?.camReason !== undefined) v.reason = live.camReason;
     if (live?.remoteTrack) v.teacherTrack = live.remoteTrack;
     return v;
   }

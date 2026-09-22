@@ -368,6 +368,38 @@ test("student: camera rejection → status error with reason, no track", async (
   assert.equal(link.captureActive(), false);
 });
 
+test("student: camera rejection reason is bounded to 200 chars on the wire", async () => {
+  const { link, port, sent } = await readyStudent();
+  port.rejectCamera = new Error("x".repeat(500));
+  await link.applyRequest(thumb, port);
+  const last = sent.at(-1) as { t: string; cam: string; reason?: string };
+  assert.equal(last.t, "media.status");
+  assert.equal(last.cam, "error");
+  assert.equal(last.reason?.length, 200);
+  assert.equal(link.cam, "error");
+});
+
+test("student: a send() that throws on media.status does not escape applyRequest", async () => {
+  const pc = new FakeRTCPeerConnection({});
+  const clock = new FakeClock();
+  const link = new MediaLink({
+    role: "student",
+    pc: pc as unknown as RTCPeerConnection,
+    send: (m) => {
+      if (m.t === "media.status") throw new Error("channel closed");
+    },
+    clock,
+    codecs: new FakeRtcFactory().videoCodecs(),
+  });
+  link.handle({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER });
+  await flush();
+  const port = new FakeMediaPort();
+  port.rejectCamera = new Error("NotAllowedError");
+  await link.applyRequest(thumb, port);
+  assert.equal(link.state, "ready");
+  assert.equal(link.cam, "error");
+});
+
 test("student: capture track ended → status error 'camera ended'", async () => {
   const { link, port, sent } = await readyStudent();
   await link.applyRequest(thumb, port);

@@ -36,6 +36,14 @@ test("encodingFor maps a profile to sender encoding parameters", () => {
   });
 });
 
+test("encodingFor falls back to the capture height when the track height is unknown", () => {
+  assert.equal(
+    encodingFor({ height: 180, fps: 10, kbps: 150 }, undefined).scaleResolutionDownBy,
+    4,
+  );
+  assert.equal(encodingFor({ height: 180, fps: 10, kbps: 150 }, 0).scaleResolutionDownBy, 4);
+});
+
 const codecs: RTCRtpCodec[] = [
   { mimeType: "video/VP8", clockRate: 90000 },
   { mimeType: "video/rtx", clockRate: 90000, sdpFmtpLine: "apt=96" },

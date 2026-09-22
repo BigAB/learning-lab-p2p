@@ -374,6 +374,19 @@ test("media.request thumb → camera captured, status sent, view says cam on", a
   assert.deepEqual(ctx.c.mediaView().send, thumb);
 });
 
+test("media view: camera rejection surfaces the reason (spec §9.1)", async () => {
+  const ctx = make();
+  const dc = await bringUpMedia(ctx);
+  ctx.media.rejectCamera = new Error("NotAllowedError: permission denied");
+  dc.receive(JSON.stringify({ t: "media.request", send: thumb }));
+  await flush();
+  await flush();
+  const v = ctx.c.mediaView();
+  assert.equal(v.cam, "error");
+  assert.equal(v.reason, "NotAllowedError: permission denied");
+  assert.ok((v.reason?.length ?? 0) <= 200);
+});
+
 test("session failure stops the camera; the next session starts from media none", async () => {
   const ctx = make();
   const dc = await bringUpMedia(ctx);

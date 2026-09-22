@@ -16,7 +16,7 @@ export function scaleFor(trackHeight: number | undefined, targetHeight: number):
 
 export function encodingFor(p: Profile, trackHeight: number | undefined): RTCRtpEncodingParameters {
   return {
-    scaleResolutionDownBy: scaleFor(trackHeight, p.height),
+    scaleResolutionDownBy: scaleFor(trackHeight || CAPTURE.height, p.height),
     maxFramerate: p.fps,
     maxBitrate: p.kbps * 1000,
   };

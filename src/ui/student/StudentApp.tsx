@@ -125,7 +125,7 @@ function StudentView({
           <span
             className="pill pill-camerr"
             data-cam-pill="error"
-            title={media.send === null ? "camera error" : undefined}
+            title={media.reason ?? "camera error"}
           >
             Camera unavailable
           </span>
