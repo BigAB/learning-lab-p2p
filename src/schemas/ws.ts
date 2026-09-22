@@ -25,6 +25,7 @@ export function wsKey(ws: string): string {
   return ws.toLowerCase();
 }
 
+// "en" is pinned so the order does not drift with the host locale.
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 /** Natural, case-insensitive order for any list of stations: 1, 2, 10, Row 2, Row 10. */
 export function compareWs(a: string, b: string): number {

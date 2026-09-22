@@ -7,8 +7,8 @@ Run before the first lab day of a semester and after any app deploy, iPad OS upd
 - [ ] Every iPad: Settings → Safari → Camera → Allow for the Pages origin.
 - [ ] Teacher Mac: Chrome, `/teacher` open, external camera selected in Scan modal.
 - [ ] Teacher Mac: **macOS Firewall allows incoming connections for Chrome** (System Settings → Network → Firewall), or the firewall is off on the lab network. Host ICE candidates carry the Mac's LAN IP and the firewall silently drops the inbound STUN connectivity checks, so tiles sit in `connecting` forever with no error. This is the same reason the e2e suite has to pass `--allow-loopback-in-peer-connection` to Chromium.
-- [ ] MDM web clip URL includes `?ws=<ID>` (`https://<pages-host>/<base>/student?ws=7`). Without it a fresh iPad asks for the workstation ID on first launch (type it once; it is remembered; tap "change" in the status bar to fix a typo); a *wrong* value shows a visible notice instead of silently using the saved number.
-- [ ] If adding by hand from Safari: open `/student?ws=N` first, then "Add to Home Screen". The installed app has its own storage, so the ID must come from the URL or be typed once inside the app.
+- [ ] MDM web clip URL includes `?ws=<ID>` (`https://<pages-host>/<base>/student?ws=7`). Without it a fresh iPad asks for the workstation ID on first launch (type it once; it is remembered; tap "change" in the status bar to fix a typo — but if the typo is in the MDM web-clip URL itself, fix the clip too: the installed app relaunches with its URL and will otherwise ask "Which workstation is this?" on every launch.); a *wrong* value shows a visible notice instead of silently using the saved ID.
+- [ ] If adding by hand from Safari: open `/student?ws=<ID>` first, then "Add to Home Screen". The installed app has its own storage, so the ID must come from the URL or be typed once inside the app.
 - [ ] Phone with `/courier` open; screen brightness up.
 - [ ] Teacher header and every iPad status bar show the **same `appVersion`**.
 

@@ -36,7 +36,7 @@ export const wsKey = (ws: string) => ws.toLowerCase();
 Two IDs name the same station iff their keys are equal. `Row2`, `row2` and `ROW2` are one station. Every map in core is keyed by `wsKey`; every string a human sees is a display form. When a station pairs again under a differently-cased spelling, the display form updates to the latest spelling.
 
 ### 2.3 Ordering
-Wherever stations are listed (grid, re-pair queue, `snapshot()`), they are sorted by key with `Intl.Collator(undefined, { numeric: true, sensitivity: "base" })`: `1, 2, 10, Row 2, Row 10`. Insertion order is never exposed.
+Wherever stations are listed (grid, re-pair queue, `snapshot()`), they are sorted by key with `Intl.Collator("en", { numeric: true, sensitivity: "base" })` (pinned so order does not drift with the host locale): `1, 2, 10, Row 2, Row 10`. Insertion order is never exposed.
 
 ### 2.4 Naming
 The field keeps its Phase 1 name `ws` everywhere (payload, protocol, storage, controller, hooks, UI, tests). Its TS type becomes `string`. A rename to `stationId` is a possible later mechanical change, out of scope here.
@@ -104,7 +104,7 @@ Rules: v2 present → v1 ignored and removed. v2 absent, v1 parses → migrate, 
 
 ### 7.1 Student
 - `WsPicker` is replaced by **`WsEntry`**: a text field (`autocapitalize="off" autocorrect="off" spellcheck={false} maxLength={24} inputMode="text"`), the first Zod issue rendered inline as the user types, and a **Connect** button disabled until valid. Shown when no `?ws=` and nothing saved (the Home Screen first-launch case) and for the invalid-`?ws=` notice.
-- The big ID in the status bar becomes a button with a small "change" affordance. Tapping it opens `WsEntry` prefilled with the current ID. Confirming with a different key: `controller.stop()`, persist, boot a new controller (`bootStudent` cache keyed by `wsKey`), new offer QR. Confirming with the same key just closes the entry. Cancel is available.
+- The big ID in the status bar becomes a button with a small "change" affordance. Tapping it opens `WsEntry` prefilled with the current ID. Confirming with a different key: `controller.stop()`, persist, boot a new controller (`bootStudent` cache keyed by `wsKey`), new offer QR. Confirming with the same key just closes the entry. Cancel is available. Changing the ID also rewrites a `?ws=` query in the current URL (`history.replaceState`) so a reload of that tab does not raise the conflict prompt. A Home Screen web clip keeps its own URL: if that URL carries the wrong ID, the conflict prompt appears on every launch until the clip is fixed (lab checklist).
 - URL/stored conflict prompt (`WsConflict`) compares keys and shows display forms; unchanged otherwise.
 
 ### 7.2 Teacher

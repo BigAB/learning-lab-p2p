@@ -33,6 +33,14 @@ function StudentRoute() {
   const change = (w: string) => {
     if (ws !== undefined) void releaseStudent(ws);
     pick(w);
+    // A Safari tab opened from `?ws=<old>` must not re-prompt with the stale value on its own
+    // reload. A Home Screen web clip keeps its own fixed URL, which is out of scope here — see
+    // the lab checklist.
+    const url = new URL(location.href);
+    if (url.searchParams.has("ws")) {
+      url.searchParams.set("ws", w);
+      history.replaceState(null, "", url);
+    }
   };
   if (ws === undefined && urlWs !== undefined && storedWs !== undefined) {
     return <WsConflict urlWs={urlWs} storedWs={storedWs} onPick={pick} />;
