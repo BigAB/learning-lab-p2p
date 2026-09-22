@@ -349,8 +349,10 @@ test("hello advertises the media capability", async () => {
 
 test("media view: none → ready with the teacher's track; broadcast state follows messages", async () => {
   const ctx = make();
-  const views: unknown[] = [];
-  ctx.c.on("media", (v) => views.push(v));
+  const views: { state: string; track: boolean; on: boolean }[] = [];
+  ctx.c.on("media", (v) =>
+    views.push({ state: v.state, track: v.teacherTrack !== undefined, on: v.broadcast.on }),
+  );
   assert.equal(ctx.c.mediaView().state, "none");
   const dc = await bringUpMedia(ctx);
   const v = ctx.c.mediaView();
@@ -359,7 +361,14 @@ test("media view: none → ready with the teacher's track; broadcast state follo
   assert.deepEqual(v.broadcast, { on: false });
   dc.receive(JSON.stringify({ t: "media.broadcast", on: true, source: "screen" }));
   assert.deepEqual(ctx.c.mediaView().broadcast, { on: true, source: "screen" });
-  assert.ok(views.length >= 2);
+  // One view per link event, in order: negotiating, ready (track not yet published),
+  // remoteTrack, broadcast.
+  assert.deepEqual(views, [
+    { state: "negotiating", track: false, on: false },
+    { state: "ready", track: false, on: false },
+    { state: "ready", track: true, on: false },
+    { state: "ready", track: true, on: true },
+  ]);
 });
 
 test("media.request thumb → camera captured, status sent, view says cam on", async () => {
