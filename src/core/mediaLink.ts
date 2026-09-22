@@ -313,6 +313,9 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
     if (this.closed || this.opts.role !== "student" || this.state !== "ready" || !this.tx) return;
     const sender = this.tx.sender;
     if (send === null) {
+      // Already off with nothing to stop: the teacher re-sent its standing null (a Cameras-off
+      // toggle, a focus swap). Resending an identical status would be wire noise.
+      if (this.cam === "off" && this.sending === null && !this.captureTrack) return;
       this.stopCapture();
       try {
         await sender.replaceTrack(null);

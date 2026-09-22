@@ -423,6 +423,17 @@ test("student: requests are serialised; the last one wins", async () => {
   assert.equal(port.last().stopped, true);
 });
 
+test("student: a repeated null request while already off sends no second media.status", async () => {
+  const { link, port, sent } = await readyStudent();
+  await link.applyRequest(null, port);
+  const after = sent.length;
+  await link.applyRequest(null, port);
+  assert.equal(sent.length, after, "identical off → off must not resend media.status");
+  // A real change still reports.
+  await link.applyRequest(thumb, port);
+  assert.deepEqual(sent.at(-1), { t: "media.status", cam: "on", send: thumb });
+});
+
 test("student: request before ready is ignored; close stops the capture", async () => {
   const early = makeLink("student");
   const port = new FakeMediaPort();
