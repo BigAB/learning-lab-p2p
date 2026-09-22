@@ -99,7 +99,7 @@ button.secondary {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 10px;
   padding: 12px;
 }
@@ -223,4 +223,78 @@ button.secondary {
   background: #333;
   padding: 10px 16px;
   border-radius: 8px;
+}
+.thumb {
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+.thumb .meta {
+  text-align: center;
+  padding: 4px;
+}
+.focus {
+  margin: 12px 12px 0;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.focus video {
+  width: 100%;
+  max-height: 50vh;
+  object-fit: contain;
+  background: #000;
+}
+.focus-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #1c1c1c;
+}
+.focus-bar .num {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+.focus-bar button {
+  margin-left: auto;
+}
+.pill-cam {
+  background: var(--red);
+  color: #fff;
+}
+.pill-camerr {
+  background: var(--amber);
+}
+.teacher-video {
+  position: fixed;
+  top: 72px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: calc(100% - 72px);
+  object-fit: contain;
+  background: #000;
+}
+.caption {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted);
+  font-size: 1.5rem;
+  pointer-events: none;
 }

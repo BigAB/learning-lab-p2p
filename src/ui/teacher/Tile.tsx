@@ -1,5 +1,6 @@
-import type { RosterView } from "../../core/labController";
+import type { RosterView, TileMedia } from "../../core/labController";
 import { StatusPill } from "../shared/StatusPill";
+import { VideoView } from "../shared/VideoView";
 
 function ago(ts?: number) {
   if (!ts) return "never";
@@ -11,7 +12,25 @@ function ago(ts?: number) {
       : `${Math.round(s / 3600)}h ago`;
 }
 
-export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
+function placeholder(m: TileMedia): string {
+  if (m.state === "unsupported") return "no video (older build)";
+  if (m.state === "failed") return `video failed: ${m.reason ?? "unknown"}`;
+  if (m.state === "negotiating") return "negotiating video…";
+  if (m.cam === "error") return `camera error: ${m.reason ?? "unknown"}`;
+  return "camera off";
+}
+
+export function Tile({
+  t,
+  onClick,
+  onFocus,
+}: {
+  t: RosterView;
+  onClick: () => void;
+  onFocus: () => void;
+}) {
+  const m = t.media;
+  const live = m.cam === "on" && m.track !== undefined;
   return (
     <div
       className="tile"
@@ -32,6 +51,24 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
           <StatusPill state={t.state} />
         </span>
       </div>
+      <div
+        className="thumb"
+        data-media-state={m.state}
+        data-cam={m.cam}
+        onClick={(e) => {
+          // The thumbnail is the focus control; the rest of the tile opens the drawer.
+          if (!live) return;
+          e.stopPropagation();
+          onFocus();
+        }}
+        title={live ? "Focus this station" : undefined}
+      >
+        {live && m.track ? (
+          <VideoView track={m.track} />
+        ) : (
+          <span className="meta">{placeholder(m)}</span>
+        )}
+      </div>
       <div className="meta">{t.label ?? "—"}</div>
       <div className="meta">
         {t.rtt !== undefined && <span data-rtt>{t.rtt} ms · </span>}
@@ -46,6 +83,9 @@ export function Tile({ t, onClick }: { t: RosterView; onClick: () => void }) {
         {t.visibility === "hidden" && <span title="Screen hidden">🙈 </span>}
         {t.wakeLock === false && <span title="No wake lock">💤 </span>}
         {t.versionMismatch && <span title={`Student runs ${t.remoteAppVersion}`}>⚠️ version</span>}
+        {m.stats?.cpuLimited && (
+          <span title="Teacher encoder is CPU-limited for this station">🔥 </span>
+        )}
       </div>
     </div>
   );

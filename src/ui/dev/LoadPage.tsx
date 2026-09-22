@@ -82,7 +82,7 @@ function Load({
       </header>
       <main className="grid">
         {tiles.slice(0, count).map((t) => (
-          <Tile key={t.key} t={t} onClick={() => {}} />
+          <Tile key={t.key} t={t} onClick={() => {}} onFocus={() => lab.focus(t.ws)} />
         ))}
       </main>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 4, padding: 12 }}>
