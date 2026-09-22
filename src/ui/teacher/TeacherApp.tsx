@@ -113,9 +113,18 @@ function Dashboard({ lab }: { lab: LabController }) {
           )}
           <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{APP_VERSION}</span>
         </header>
-        {focusedTile && focusedTile.media.track && (
+        {focusedTile && (
           <section className="focus" data-focus={focusedTile.key}>
-            <VideoView track={focusedTile.media.track} />
+            {focusedTile.media.track ? (
+              <VideoView track={focusedTile.media.track} />
+            ) : (
+              // Focus was requested (from the drawer, or before negotiation finished) but the
+              // station's track has not arrived yet: keep the pane so the teacher sees the
+              // request took, rather than a grid that silently did nothing.
+              <div className="focus-placeholder meta" data-focus-waiting>
+                Waiting for camera…
+              </div>
+            )}
             <div className="focus-bar">
               <span className="num">{focusedTile.ws}</span>
               {focusedTile.media.stats && (
