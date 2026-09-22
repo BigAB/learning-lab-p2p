@@ -207,7 +207,19 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
   }
 
   // ---- student ----
-  // applyRequest / captureActive: Task 6.
+
+  /**
+   * Student: apply the teacher's request. Serialised so an in-flight camera grant cannot race the
+   * next request. Resolves after the resulting media.status has been sent. Never rejects.
+   */
+  applyRequest(send: Profile | null, port: MediaPort): Promise<void> {
+    this.queue = this.queue.then(() => this.doApply(send, port)).catch(() => {});
+    return this.queue;
+  }
+
+  captureActive(): boolean {
+    return this.captureTrack !== null;
+  }
 
   // ---- both ----
 
@@ -295,6 +307,77 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
     }
   }
 
+  private async doApply(send: Profile | null, port: MediaPort): Promise<void> {
+    if (this.closed || this.opts.role !== "student" || this.state !== "ready" || !this.tx) return;
+    const sender = this.tx.sender;
+    if (send === null) {
+      this.stopCapture();
+      try {
+        await sender.replaceTrack(null);
+      } catch {
+        /* a closed PC has nothing to detach */
+      }
+      this.cam = "off";
+      this.sending = null;
+      return this.report();
+    }
+    if (!this.captureTrack) {
+      let track: MediaStreamTrack;
+      try {
+        track = await port.camera(CAPTURE);
+      } catch (e) {
+        this.cam = "error";
+        this.sending = null;
+        return this.report(msg(e));
+      }
+      if (this.closed) {
+        track.stop();
+        return;
+      }
+      this.captureTrack = track;
+      track.onended = () => {
+        if (this.captureTrack !== track) return;
+        this.captureTrack = null;
+        this.cam = "error";
+        this.sending = null;
+        this.report("camera ended");
+      };
+      try {
+        await sender.replaceTrack(track);
+      } catch (e) {
+        this.stopCapture();
+        this.cam = "error";
+        this.sending = null;
+        return this.report(`replaceTrack: ${msg(e)}`);
+      }
+    }
+    const track = this.captureTrack;
+    try {
+      await applyEncoding(sender, encodingFor(send, track.getSettings().height));
+    } catch {
+      // Older WebKit: no per-encoding scaling. Change the capture itself instead.
+      try {
+        await track.applyConstraints({ height: send.height, frameRate: send.fps });
+      } catch {
+        /* best effort: the thumbnail is then just larger than asked */
+      }
+    }
+    this.cam = "on";
+    this.sending = send;
+    this.report();
+  }
+
+  private report(reason?: string): void {
+    if (this.closed) return;
+    this.opts.send({
+      t: "media.status",
+      cam: this.cam,
+      send: this.sending,
+      ...(reason ? { reason } : {}),
+    });
+    this.emit("capture", this.cam);
+  }
+
   private ready(): void {
     this.clearOfferTimer();
     this.reason = undefined;
@@ -317,7 +400,7 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
     this.offerTimer = undefined;
   }
 
-  protected stopCapture(): void {
+  private stopCapture(): void {
     const t = this.captureTrack;
     if (!t) return;
     t.onended = null;
@@ -335,7 +418,3 @@ export class MediaLink extends Emitter<MediaLinkEvents> {
     this.emit("state", s, reason);
   }
 }
-
-// Referenced by Task 6's student-side implementation; kept here so the import stays used.
-export const STUDENT_CAPTURE = CAPTURE;
-export type { MediaPort as StudentMediaPort };

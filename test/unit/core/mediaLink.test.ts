@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { MediaLink, type MediaState } from "../../../src/core/mediaLink";
 import type { MediaMessage } from "../../../src/schemas/media";
 import { FakeClock } from "../helpers/fakeClock";
+import { FakeMediaPort } from "../helpers/fakeMedia";
 import {
   CHROME_MEDIA_OFFER,
   FakeMediaStreamTrack,
@@ -294,4 +295,110 @@ test("close cancels the offer timer and refuses further work", async () => {
   link.handle({ t: "media.answer", seq: 1, sdp: SAFARI_MEDIA_ANSWER });
   await flush();
   assert.equal(link.state, "negotiating");
+});
+
+async function readyStudent() {
+  const ctx = makeLink("student");
+  ctx.link.handle({ t: "media.offer", seq: 1, sdp: CHROME_MEDIA_OFFER });
+  await flush();
+  const port = new FakeMediaPort();
+  const sender = ctx.pc.getTransceivers()[1]!.sender; // mid 2: offered recvonly → we send
+  return { ...ctx, port, sender };
+}
+
+test("student thumb request: capture 720p15 once, replaceTrack, scale 4, status on", async () => {
+  const { link, port, sender, sent } = await readyStudent();
+  const caps: string[] = [];
+  link.on("capture", (c) => caps.push(c));
+  await link.applyRequest(thumb, port);
+  assert.deepEqual(port.cameraCalls, [{ width: 1280, height: 720, frameRate: 15 }]);
+  assert.equal(sender.track, port.last().asTrack());
+  assert.deepEqual(sender.encoding(), {
+    scaleResolutionDownBy: 4,
+    maxFramerate: 10,
+    maxBitrate: 150_000,
+  });
+  assert.deepEqual(sent.at(-1), { t: "media.status", cam: "on", send: thumb });
+  assert.equal(link.cam, "on");
+  assert.deepEqual(link.sending, thumb);
+  assert.equal(link.captureActive(), true);
+  assert.deepEqual(caps, ["on"]);
+  // Focus: same track, new parameters, no second capture.
+  await link.applyRequest({ height: 720, fps: 15, kbps: 1200 }, port);
+  assert.equal(port.cameraCalls.length, 1);
+  assert.deepEqual(sender.encoding(), {
+    scaleResolutionDownBy: 1,
+    maxFramerate: 15,
+    maxBitrate: 1_200_000,
+  });
+});
+
+test("student null request: track stopped, replaceTrack(null), status off", async () => {
+  const { link, port, sender, sent } = await readyStudent();
+  await link.applyRequest(thumb, port);
+  await link.applyRequest(null, port);
+  assert.equal(port.last().stopped, true);
+  assert.equal(sender.replaceTrackCalls.at(-1), null);
+  assert.deepEqual(sent.at(-1), { t: "media.status", cam: "off", send: null });
+  assert.equal(link.captureActive(), false);
+  // A later request captures afresh.
+  await link.applyRequest(thumb, port);
+  assert.equal(port.cameraCalls.length, 2);
+});
+
+test("student: setParameters rejection falls back to applyConstraints", async () => {
+  const { link, port, sender } = await readyStudent();
+  sender.rejectSetParameters = new Error("InvalidModificationError");
+  await link.applyRequest({ height: 360, fps: 15, kbps: 1200 }, port);
+  assert.deepEqual(port.last().constraintsApplied, [{ height: 360, frameRate: 15 }]);
+  assert.equal(link.cam, "on");
+});
+
+test("student: camera rejection → status error with reason, no track", async () => {
+  const { link, port, sender, sent } = await readyStudent();
+  port.rejectCamera = new Error("NotAllowedError: permission denied");
+  await link.applyRequest(thumb, port);
+  assert.deepEqual(sent.at(-1), {
+    t: "media.status",
+    cam: "error",
+    reason: "NotAllowedError: permission denied",
+    send: null,
+  });
+  assert.equal(sender.replaceTrackCalls.length, 0);
+  assert.equal(link.captureActive(), false);
+});
+
+test("student: capture track ended → status error 'camera ended'", async () => {
+  const { link, port, sent } = await readyStudent();
+  await link.applyRequest(thumb, port);
+  port.last().end();
+  assert.deepEqual(sent.at(-1), {
+    t: "media.status",
+    cam: "error",
+    reason: "camera ended",
+    send: null,
+  });
+  assert.equal(link.captureActive(), false);
+});
+
+test("student: requests are serialised; the last one wins", async () => {
+  const { link, port, sender } = await readyStudent();
+  const a = link.applyRequest(thumb, port);
+  const b = link.applyRequest(null, port);
+  await Promise.all([a, b]);
+  assert.equal(link.cam, "off");
+  assert.equal(sender.replaceTrackCalls.at(-1), null);
+  assert.equal(port.last().stopped, true);
+});
+
+test("student: request before ready is ignored; close stops the capture", async () => {
+  const early = makeLink("student");
+  const port = new FakeMediaPort();
+  await early.link.applyRequest(thumb, port);
+  assert.equal(port.cameraCalls.length, 0);
+  const { link, port: p2 } = await readyStudent();
+  await link.applyRequest(thumb, p2);
+  link.close();
+  assert.equal(p2.last().stopped, true);
+  assert.equal(link.captureActive(), false);
 });
