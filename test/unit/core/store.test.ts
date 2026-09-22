@@ -43,3 +43,41 @@ test("saveState validates before writing", () => {
   assert.equal(kv.get("k"), JSON.stringify({ n: 5 }));
   assert.throws(() => saveState(kv, "k", S, { n: "bad" } as unknown as z.infer<typeof S>));
 });
+
+test("migrate hook runs only when the key is missing; its result is validated and saved", () => {
+  const kv = new MemoryKv();
+  assert.deepEqual(
+    loadState(kv, "k", S, fallback, undefined, () => ({ n: 9 })),
+    { n: 9 },
+  );
+  assert.equal(kv.get("k"), JSON.stringify({ n: 9 }));
+  let called = 0;
+  loadState(kv, "k", S, fallback, undefined, () => {
+    called++;
+    return { n: 1 };
+  });
+  assert.equal(called, 0, "present key: no migration");
+});
+
+test("a migrate hook returning undefined or an invalid value falls back without writing", () => {
+  const kv = new MemoryKv();
+  assert.deepEqual(
+    loadState(kv, "k", S, fallback, undefined, () => undefined),
+    { n: 1 },
+  );
+  assert.equal(kv.get("k"), null);
+  const logs: string[] = [];
+  assert.deepEqual(
+    loadState(
+      kv,
+      "k",
+      S,
+      fallback,
+      (m) => logs.push(m),
+      () => ({ n: "bad" }) as unknown as z.infer<typeof S>,
+    ),
+    { n: 1 },
+  );
+  assert.equal(kv.get("k"), null);
+  assert.equal(logs.length, 1);
+});
