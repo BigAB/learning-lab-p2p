@@ -101,16 +101,33 @@ button.secondary {
   gap: 10px;
   padding: 12px;
 }
-/* 30 big targets on an iPad held at arm's length: 6 columns of ≥ 64 px buttons. */
-.ws-picker {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(64px, 96px));
-  gap: 12px;
+.bar .change {
+  font-size: 0.8rem;
+  padding: 0.3em 0.7em;
 }
-.ws-picker button {
-  font-size: 1.6rem;
+.ws-entry {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+.ws-entry input {
+  font: inherit;
+  font-size: 2rem;
   font-weight: 800;
-  padding: 0.5em 0;
+  padding: 0.3em 0.6em;
+  width: 14ch;
+  max-width: 80vw;
+  border-radius: 8px;
+  border: 2px solid #333;
+  background: #1c1c1c;
+  color: var(--fg);
+  text-align: center;
+}
+.ws-entry input:focus {
+  outline: none;
+  border-color: var(--blue);
 }
 .tile {
   background: #1c1c1c;

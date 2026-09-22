@@ -4,22 +4,67 @@ import { expectState } from "./helpers";
 /**
  * An iPad Home Screen web app launches without the `?ws=` it was added from, and its storage is
  * isolated from Safari's, so on first launch the student page knows nothing. It must offer a
- * one-time picker instead of a dead end, and remember the answer.
+ * one-time typed entry instead of a dead end, remember the answer, and let a typo be fixed.
  */
-test("student without ?ws and no saved workstation gets a picker that persists", async ({
+test("student without ?ws and no saved workstation types an ID that persists", async ({
   browser,
 }) => {
   const ctx = await browser.newContext({ permissions: ["camera"] });
   const page = await ctx.newPage();
   await page.goto("/student");
-  await expect(page.locator("[data-ws-pick]")).toHaveCount(30);
-  await page.locator("[data-ws-pick='7']").click();
-  await expect(page.locator(".bar .ws")).toHaveText("7");
+  const input = page.locator("[data-ws-input]");
+  await expect(input).toBeVisible();
+  await expect(page.locator("[data-ws-confirm]")).toBeDisabled();
+  await input.fill("Row#2");
+  await expect(page.locator("[data-ws-issue]")).toContainText("Letters, digits");
+  await expect(page.locator("[data-ws-confirm]")).toBeDisabled();
+  await input.fill("  Row   2 ");
+  await page.locator("[data-ws-confirm]").click();
+  await expect(page.locator(".bar .ws")).toHaveText("Row 2");
   await expectState(page, "#student", "awaiting-remote");
 
   await page.goto("/student"); // next launch, still no query string
-  await expect(page.locator("[data-ws-pick]")).toHaveCount(0);
-  await expect(page.locator(".bar .ws")).toHaveText("7");
+  await expect(page.locator("[data-ws-input]")).toHaveCount(0);
+  await expect(page.locator(".bar .ws")).toHaveText("Row 2");
+  await ctx.close();
+});
+
+test("tapping the ID in the status bar lets the student fix a typo; the new ID gets a new offer", async ({
+  browser,
+}) => {
+  const ctx = await browser.newContext({ permissions: ["camera"] });
+  const page = await ctx.newPage();
+  await page.goto("/student?ws=Rwo2");
+  await expect(page.locator(".bar .ws")).toHaveText("Rwo2");
+  const firstOffer = page.locator("canvas[data-payload][data-role='offer'][data-ws='Rwo2']");
+  await expect(firstOffer).toHaveAttribute("data-payload", /^LAB2:/);
+
+  await page.locator("[data-ws-change]").click();
+  const input = page.locator("[data-ws-input]");
+  await expect(input).toHaveValue("Rwo2");
+  await page.locator("[data-ws-cancel]").click();
+  await expect(page.locator(".bar .ws")).toHaveText("Rwo2");
+
+  await page.locator("[data-ws-change]").click();
+  await input.fill("Row2");
+  await page.locator("[data-ws-confirm]").click();
+  await expect(page.locator(".bar .ws")).toHaveText("Row2");
+  await expect(
+    page.locator("canvas[data-payload][data-role='offer'][data-ws='Row2']"),
+  ).toHaveAttribute("data-payload", /^LAB2:/);
+  await expectState(page, "#student", "awaiting-remote");
+
+  await page.goto("/student");
+  await expect(page.locator(".bar .ws")).toHaveText("Row2");
+  await ctx.close();
+});
+
+test("an invalid ?ws with nothing saved shows the entry with a notice", async ({ browser }) => {
+  const ctx = await browser.newContext({ permissions: ["camera"] });
+  const page = await ctx.newPage();
+  await page.goto("/student?ws=Row%232");
+  await expect(page.locator("[data-ws-notice]")).toBeVisible();
+  await expect(page.locator("[data-ws-input]")).toBeVisible();
   await ctx.close();
 });
 

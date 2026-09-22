@@ -3,9 +3,9 @@ export function WsConflict({
   storedWs,
   onPick,
 }: {
-  urlWs: number;
-  storedWs: number;
-  onPick: (ws: number) => void;
+  urlWs: string;
+  storedWs: string;
+  onPick: (ws: string) => void;
 }) {
   return (
     <div className="center">

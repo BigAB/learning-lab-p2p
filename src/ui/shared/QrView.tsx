@@ -9,7 +9,7 @@ export function QrView({
 }: {
   wire: string;
   role: "offer" | "answer";
-  ws: number;
+  ws: string;
   size?: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);

@@ -4,12 +4,20 @@ import { decodeWire } from "../../core/sdpCodec";
 import { usePromise } from "../../hooks/usePromise";
 import { useSessionView } from "../../hooks/useSessionView";
 import { useStudent } from "../../hooks/useStudent";
+import { wsKey } from "../../schemas/ws";
 import { APP_VERSION } from "../platform/appVersion";
 import { QrView } from "../shared/QrView";
 import { Scanner } from "../shared/Scanner";
 import { StatusPill } from "../shared/StatusPill";
+import { WsEntry } from "./WsEntry";
 
-export function StudentApp({ boot }: { boot: Promise<StudentController> }) {
+export function StudentApp({
+  boot,
+  onChangeWs,
+}: {
+  boot: Promise<StudentController>;
+  onChangeWs: (ws: string) => void;
+}) {
   const { value: c, error } = usePromise(boot);
   if (error)
     return (
@@ -24,15 +32,22 @@ export function StudentApp({ boot }: { boot: Promise<StudentController> }) {
         <h1>Starting…</h1>
       </div>
     );
-  return <StudentView c={c} />;
+  return <StudentView c={c} onChangeWs={onChangeWs} />;
 }
 
-function StudentView({ c }: { c: StudentController }) {
+function StudentView({
+  c,
+  onChangeWs,
+}: {
+  c: StudentController;
+  onChangeWs: (ws: string) => void;
+}) {
   const { session, lastCmd, lastError } = useStudent(c);
   const view = useSessionView(session);
   const [scanning, setScanning] = useState(false);
   const [toast, setToast] = useState<string | undefined>();
   const [showId, setShowId] = useState(false);
+  const [editing, setEditing] = useState(false);
   // Bumped whenever a scanned code is rejected, which schedules <Scanner> to offer the same QR
   // once more after its retry delay instead of swallowing it forever as a duplicate.
   const [scanResetKey, setScanResetKey] = useState(0);
@@ -85,6 +100,14 @@ function StudentView({ c }: { c: StudentController }) {
     <div id="student" data-state={view.state}>
       <header className="bar">
         <span className="ws">{c.ws}</span>
+        <button
+          className="secondary change"
+          data-ws-change
+          title="Change workstation ID"
+          onClick={() => setEditing(true)}
+        >
+          change
+        </button>
         <StatusPill state={view.state} />
         {view.rtt !== undefined && <span className="meta">{view.rtt} ms</span>}
         <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{APP_VERSION}</span>
@@ -96,31 +119,42 @@ function StudentView({ c }: { c: StudentController }) {
           Could not start: {lastError.message} — retrying…
         </p>
       )}
-      <main className="center">
-        {view.state === "awaiting-remote" && view.localWire && !scanning && (
-          <>
-            <QrView wire={view.localWire} role="offer" ws={c.ws} />
-            <p>Waiting for teacher</p>
-            <button onClick={() => setScanning(true)}>Show camera</button>
-          </>
-        )}
-        {view.state === "awaiting-remote" && scanning && (
-          <>
-            <Scanner onWire={onWire} onError={onScanError} resetKey={scanResetKey} />
-            <p>Hold the phone's code up to the camera</p>
-            <button className="secondary" onClick={() => setScanning(false)}>
-              Back to my code
-            </button>
-          </>
-        )}
-        {view.state === "connecting" && <h2>Connecting…</h2>}
-        {(view.state === "connected" || view.state === "degraded") && (
-          <h2 style={{ color: "var(--muted)" }}>Ready</h2>
-        )}
-        {(view.state === "gathering" || view.state === "idle" || view.state === "none") && (
-          <h2>Starting…</h2>
-        )}
-      </main>
+      {editing ? (
+        <WsEntry
+          initial={c.ws}
+          onConfirm={(w) => {
+            setEditing(false);
+            if (wsKey(w) !== wsKey(c.ws)) onChangeWs(w);
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      ) : (
+        <main className="center">
+          {view.state === "awaiting-remote" && view.localWire && !scanning && (
+            <>
+              <QrView wire={view.localWire} role="offer" ws={c.ws} />
+              <p>Waiting for teacher</p>
+              <button onClick={() => setScanning(true)}>Show camera</button>
+            </>
+          )}
+          {view.state === "awaiting-remote" && scanning && (
+            <>
+              <Scanner onWire={onWire} onError={onScanError} resetKey={scanResetKey} />
+              <p>Hold the phone's code up to the camera</p>
+              <button className="secondary" onClick={() => setScanning(false)}>
+                Back to my code
+              </button>
+            </>
+          )}
+          {view.state === "connecting" && <h2>Connecting…</h2>}
+          {(view.state === "connected" || view.state === "degraded") && (
+            <h2 style={{ color: "var(--muted)" }}>Ready</h2>
+          )}
+          {(view.state === "gathering" || view.state === "idle" || view.state === "none") && (
+            <h2>Starting…</h2>
+          )}
+        </main>
+      )}
       {showId && <div className="overlay-id">{c.ws}</div>}
       {toast && <div className="toast">{toast}</div>}
     </div>
