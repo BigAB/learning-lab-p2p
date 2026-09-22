@@ -318,7 +318,21 @@ test("counts", async () => {
   const ctx = make();
   await pair(ctx, "1");
   await pair(ctx, "2");
+  await pair(ctx, "3");
   ctx.rtc.pcs[1]!.channels.at(-1)!.close();
+  ctx.rtc.pcs[2]!.setIce("disconnected");
+  assert.deepEqual(ctx.lab.counts(), { connected: 1, degraded: 1, failed: 1, never: 0 });
+});
+
+test("counts() reads session state directly; it does not build a snapshot on every stats tick", async () => {
+  const ctx = make();
+  await pair(ctx, "1");
+  await pair(ctx, "2");
+  ctx.rtc.pcs[1]!.channels.at(-1)!.close();
+  const lab = ctx.lab as unknown as { snapshot: () => unknown };
+  lab.snapshot = () => {
+    throw new Error("snapshot() must not be called from counts()");
+  };
   assert.deepEqual(ctx.lab.counts(), { connected: 1, degraded: 0, failed: 1, never: 0 });
 });
 

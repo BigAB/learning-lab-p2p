@@ -414,12 +414,15 @@ export class LabController extends Emitter<LabEvents> {
   }
 
   counts(): { connected: number; degraded: number; failed: number; never: number } {
+    // Runs on every change, including the 2 s stats tick: read session state directly rather
+    // than building a full RosterView per station just to look at one field.
     const c = { connected: 0, degraded: 0, failed: 0, never: 0 };
-    for (const t of this.snapshot()) {
-      if (t.state === "connected") c.connected++;
-      else if (t.state === "degraded") c.degraded++;
-      else if (t.state === "never") c.never++;
-      else if (t.state === "failed") c.failed++;
+    for (const key of Object.keys(this.state.roster)) {
+      const st = this.sessions.get(key)?.state;
+      if (st === undefined) c.never++;
+      else if (st === "connected") c.connected++;
+      else if (st === "degraded") c.degraded++;
+      else if (st === "failed") c.failed++;
     }
     return c;
   }
