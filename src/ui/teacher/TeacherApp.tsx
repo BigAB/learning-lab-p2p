@@ -48,7 +48,9 @@ function Dashboard({ lab }: { lab: LabController }) {
   const share = (source: "camera" | "screen") => {
     setNotice(undefined);
     lab.startBroadcast(source).catch((e: unknown) => {
-      setNotice(`Sharing cancelled: ${(e as Error).message}`);
+      const cancelled = e instanceof DOMException && e.name === "NotAllowedError";
+      const message = e instanceof Error ? e.message : String(e);
+      setNotice(cancelled ? "Sharing cancelled" : `Sharing failed: ${message}`);
     });
   };
 
