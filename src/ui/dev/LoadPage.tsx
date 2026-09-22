@@ -28,7 +28,7 @@ function Load({
   count: number;
   setCount: (n: number) => void;
 }) {
-  const { tiles, counts } = useLabRoster(lab);
+  const { tiles, counts, settings, broadcast, media } = useLabRoster(lab);
   const wsList = useMemo(() => Array.from({ length: count }, (_, i) => String(i + 1)), [count]);
 
   useEffect(() => {
@@ -79,12 +79,77 @@ function Load({
         <span style={{ color: "var(--green)" }}>● {counts.connected}</span>
         <span style={{ color: "var(--amber)" }}>● {counts.degraded}</span>
         <span style={{ color: "var(--red)" }}>● {counts.failed + counts.never}</span>
+        <button
+          className={settings.media.cameras ? "" : "secondary"}
+          data-action="cameras"
+          aria-pressed={settings.media.cameras}
+          onClick={() => lab.setCameras(!settings.media.cameras)}
+        >
+          Cameras {settings.media.cameras ? "on" : "off"}
+        </button>
+        {broadcast === null ? (
+          <>
+            <button
+              className="secondary"
+              data-action="share-camera"
+              onClick={() => void lab.startBroadcast("camera").catch(console.warn)}
+            >
+              Share camera
+            </button>
+            <button
+              className="secondary"
+              data-action="share-screen"
+              onClick={() => void lab.startBroadcast("screen").catch(console.warn)}
+            >
+              Share screen
+            </button>
+          </>
+        ) : (
+          <button data-action="share-stop" onClick={() => lab.stopBroadcast()}>
+            Stop sharing {broadcast}
+          </button>
+        )}
+        <span className="meta" data-media-summary>
+          📷 {media.on} on · ⚠ {media.cpuLimited} CPU-limited
+        </span>
       </header>
       <main className="grid">
         {tiles.slice(0, count).map((t) => (
-          <Tile key={t.key} t={t} onClick={() => {}} />
+          <Tile key={t.key} t={t} onClick={() => {}} onFocus={() => lab.focus(t.ws)} />
         ))}
       </main>
+      <table data-stats className="meta" style={{ margin: 12, borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th>ws</th>
+            <th>media</th>
+            <th>cam</th>
+            <th>encoder</th>
+            <th>cpu</th>
+            <th>out</th>
+            <th>in</th>
+            <th>decoded</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tiles.slice(0, count).map((t) => (
+            <tr key={t.key} data-stats-row={t.key}>
+              <td>{t.ws}</td>
+              <td>{t.media.state}</td>
+              <td>{t.media.cam}</td>
+              <td>{t.media.stats?.encoder ?? "—"}</td>
+              <td>{t.media.stats?.cpuLimited ? "⚠" : ""}</td>
+              <td>
+                {t.media.stats?.outHeight ?? "—"}p @ {t.media.stats?.outFps ?? "—"}
+              </td>
+              <td>
+                {t.media.stats?.inHeight ?? "—"}p @ {t.media.stats?.inFps ?? "—"}
+              </td>
+              <td>{t.media.stats?.framesDecoded ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(10, 1fr)", gap: 4, padding: 12 }}>
         {wsList.map((ws) => (
           <iframe

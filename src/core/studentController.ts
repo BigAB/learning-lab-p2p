@@ -1,12 +1,15 @@
 import type { CmdMessage } from "../schemas/protocol";
 import { LEGACY_STUDENT_KEY } from "../schemas/legacy";
+import type { CamState, MediaSource, Profile } from "../schemas/media";
+import { MEDIA_CAP } from "../schemas/media";
 import type { StudentState } from "../schemas/storage";
 import { STUDENT_KEY, StudentStateSchema } from "../schemas/storage";
 import type { Clock, TimerHandle } from "./clock";
 import { Emitter } from "./events";
+import type { MediaLink, MediaState, MediaTimers } from "./mediaLink";
 import { migrateStudentV1 } from "./migrations";
 import { PeerSession, type SessionTimers } from "./peerSession";
-import type { DevicePort, KeyValueStore, RtcFactory, WakeLockPort } from "./ports";
+import type { DevicePort, KeyValueStore, MediaPort, RtcFactory, WakeLockPort } from "./ports";
 import { loadState, saveState } from "./store";
 
 export interface StudentEnv {
@@ -15,13 +18,26 @@ export interface StudentEnv {
   kv: KeyValueStore;
   wakeLock: WakeLockPort;
   device: DevicePort;
+  media: MediaPort;
   reload(): void;
   appVersion: string;
   ua: string;
   certificates?: RTCCertificate[];
   timers?: Partial<SessionTimers>;
+  mediaTimers?: Partial<MediaTimers>;
   restartDelayMs?: number;
   log?(msg: string): void;
+}
+
+export interface StudentMediaView {
+  state: MediaState;
+  cam: CamState;
+  /** Why `cam` is "error", if it is (spec §9.1). */
+  reason?: string;
+  send: Profile | null;
+  /** The teacher's video, once negotiated. Shown only while broadcast.on. */
+  teacherTrack?: MediaStreamTrack;
+  broadcast: { on: boolean; source?: MediaSource };
 }
 
 export type StudentEvents = {
@@ -30,6 +46,7 @@ export type StudentEvents = {
   state: [StudentState];
   /** A spawn attempt died before it could show a QR (message is user-facing). */
   error: [string];
+  media: [StudentMediaView];
 };
 
 /** Ceiling for the exponential respawn backoff: a wedged iPad still retries every 30 s. */
@@ -105,6 +122,22 @@ export class StudentController extends Emitter<StudentEvents> {
     this.session = null;
   }
 
+  mediaView(): StudentMediaView {
+    const link = this.session?.media;
+    // A failed session's link is closed; report it as gone rather than frozen at its last state.
+    const live = link && this.session?.state !== "failed" ? link : undefined;
+    const b = live?.lastBroadcast;
+    const v: StudentMediaView = {
+      state: live?.state ?? "none",
+      cam: live?.cam ?? "off",
+      send: live?.sending ?? null,
+      broadcast: { on: b?.on ?? false, ...(b?.source ? { source: b.source } : {}) },
+    };
+    if (live?.camReason !== undefined) v.reason = live.camReason;
+    if (live?.remoteTrack) v.teacherTrack = live.remoteTrack;
+    return v;
+  }
+
   async pushStatus(): Promise<void> {
     const s = this.session;
     if (!s || (s.state !== "connected" && s.state !== "degraded")) return;
@@ -126,10 +159,13 @@ export class StudentController extends Emitter<StudentEvents> {
       clock: this.env.clock,
       appVersion: this.env.appVersion,
       ua: this.env.ua,
+      caps: [MEDIA_CAP],
       ...(this.env.timers ? { timers: this.env.timers } : {}),
+      ...(this.env.mediaTimers ? { mediaTimers: this.env.mediaTimers } : {}),
       ...(this.env.certificates ? { certificates: this.env.certificates } : {}),
     });
     s.on("state", (st, prev) => {
+      if (st === "failed") this.emitMedia(s);
       if (st === "connected") {
         // A session that got all the way up clears the backoff: the next failure restarts at
         // restartDelayMs rather than inheriting the delay of a previous bad run.
@@ -154,6 +190,15 @@ export class StudentController extends Emitter<StudentEvents> {
     s.on("needsRepair", (reason) => {
       this.env.log?.(`session failed: ${reason}`);
       this.scheduleRespawn(s);
+    });
+    s.on("media", (link: MediaLink) => {
+      link.on("request", (send) => {
+        void link.applyRequest(send, this.env.media).then(() => this.emitMedia(s));
+      });
+      link.on("state", () => this.emitMedia(s));
+      link.on("remoteTrack", () => this.emitMedia(s));
+      link.on("broadcast", () => this.emitMedia(s));
+      link.on("capture", () => this.emitMedia(s));
     });
     this.session = s;
     this.emit("session", s);
@@ -211,5 +256,10 @@ export class StudentController extends Emitter<StudentEvents> {
       this.env.log?.(`persist failed: ${(e as Error).message}`);
     }
     this.emit("state", this.state);
+  }
+
+  private emitMedia(s: PeerSession): void {
+    if (this.session !== s) return;
+    this.emit("media", this.mediaView());
   }
 }

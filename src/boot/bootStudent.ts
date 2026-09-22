@@ -7,6 +7,7 @@ import { WsSchema, wsKey } from "../schemas/ws";
 import { APP_VERSION } from "../ui/platform/appVersion";
 import { browserDevice } from "../ui/platform/browserDevice";
 import { browserKv } from "../ui/platform/browserKv";
+import { browserMedia } from "../ui/platform/browserMedia";
 import { browserRtc } from "../ui/platform/browserRtc";
 import { browserWakeLock } from "../ui/platform/browserWakeLock";
 import { primeCameraPermission } from "../ui/platform/camera";
@@ -83,6 +84,7 @@ async function bootStudentUncached(ws: string): Promise<StudentController> {
       rtc: browserRtc,
       clock: realClock,
       kv: browserKv,
+      media: browserMedia,
       wakeLock: browserWakeLock,
       device: browserDevice,
       reload: () => location.reload(),
@@ -95,10 +97,14 @@ async function bootStudentUncached(ws: string): Promise<StudentController> {
     ws,
   );
   if (import.meta.env.DEV) {
-    registerTestHook("student", async (wire) => {
-      const p = await decodeWire(wire);
-      await c.session?.applyRemote(p);
-    });
+    registerTestHook(
+      "student",
+      async (wire) => {
+        const p = await decodeWire(wire);
+        await c.session?.applyRemote(p);
+      },
+      { activeTracks: () => (c.session?.media?.captureActive() ? 1 : 0) },
+    );
   }
   // Dev-only /dev/load plumbing: an iframe'd student auto-pairs with the parent LabController.
   // The schema lives inside the guard so a production build drops the whole feature, parser

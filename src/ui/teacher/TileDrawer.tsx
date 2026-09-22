@@ -9,10 +9,12 @@ function shortFingerprint(fp: string): string {
 export function TileDrawer({
   lab,
   t,
+  focused,
   onClose,
 }: {
   lab: LabController;
   t: RosterView;
+  focused: boolean;
   onClose: () => void;
 }) {
   const [label, setLabel] = useState(t.label ?? "");
@@ -45,6 +47,46 @@ export function TileDrawer({
               ? " · ⚠️ different device than last pairing"
               : " · same device as last pairing")}
         </p>
+        <div className="meta" data-media-detail>
+          <p>
+            Video: {t.media.state}
+            {t.media.reason ? ` — ${t.media.reason}` : ""} · camera {t.media.cam}
+            {t.media.send ? ` (${t.media.send.height}p @ ${t.media.send.fps})` : ""}
+          </p>
+          {t.media.stats && (
+            <p>
+              in {t.media.stats.inHeight ?? "?"}p @ {t.media.stats.inFps ?? "?"} fps
+              {t.media.stats.framesDropped !== undefined
+                ? ` · dropped ${t.media.stats.framesDropped}`
+                : ""}
+              {" · "}out {t.media.stats.outHeight ?? "?"}p @ {t.media.stats.outFps ?? "?"} fps
+              {t.media.stats.encoder ? ` · ${t.media.stats.encoder}` : ""}
+              {t.media.stats.cpuLimited ? " · ⚠ CPU-limited" : ""}
+            </p>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            {t.media.state === "ready" && (
+              <button
+                data-action="focus"
+                onClick={() => {
+                  lab.focus(focused ? null : t.ws);
+                  onClose();
+                }}
+              >
+                {focused ? "Unfocus" : "Focus"}
+              </button>
+            )}
+            {t.media.state === "failed" && (
+              <button
+                className="secondary"
+                data-action="retry-video"
+                onClick={() => lab.retryMedia(t.ws)}
+              >
+                Retry video
+              </button>
+            )}
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => lab.sendCmd(t.ws, "ping")}>Ping</button>
           <button onClick={() => lab.sendCmd(t.ws, "show-id")}>Show ID on iPad</button>

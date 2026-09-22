@@ -10,6 +10,7 @@ import { APP_VERSION } from "../platform/appVersion";
 import { QrView } from "../shared/QrView";
 import { Scanner } from "../shared/Scanner";
 import { StatusPill } from "../shared/StatusPill";
+import { VideoView } from "../shared/VideoView";
 import { WsEntry } from "./WsEntry";
 
 export function StudentApp({
@@ -43,12 +44,13 @@ function StudentView({
   c: StudentController;
   onChangeWs: (ws: string) => void;
 }) {
-  const { session, lastCmd, lastError } = useStudent(c);
+  const { session, lastCmd, lastError, media } = useStudent(c);
   const view = useSessionView(session);
   const [scanning, setScanning] = useState(false);
   const [toast, setToast] = useState<string | undefined>();
   const [showId, setShowId] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [playing, setPlaying] = useState(false);
   // Bumped whenever a scanned code is rejected, which schedules <Scanner> to offer the same QR
   // once more after its retry delay instead of swallowing it forever as a duplicate.
   const [scanResetKey, setScanResetKey] = useState(0);
@@ -61,6 +63,10 @@ function StudentView({
   }, []);
 
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  useEffect(() => {
+    if (!media.broadcast.on) setPlaying(false);
+  }, [media.broadcast.on]);
 
   useEffect(() => {
     if (view.state === "connected") setScanning(false);
@@ -98,7 +104,7 @@ function StudentView({
   );
 
   return (
-    <div id="student" data-state={view.state}>
+    <div id="student" data-state={view.state} data-cam={media.cam}>
       <header className="bar">
         <span className="ws">{c.ws}</span>
         <button
@@ -110,6 +116,20 @@ function StudentView({
           change
         </button>
         <StatusPill state={view.state} />
+        {media.cam === "on" && (
+          <span className="pill pill-cam" data-cam-pill="on">
+            ● Camera on
+          </span>
+        )}
+        {media.cam === "error" && (
+          <span
+            className="pill pill-camerr"
+            data-cam-pill="error"
+            title={media.reason ?? "camera error"}
+          >
+            Camera unavailable
+          </span>
+        )}
         {view.rtt !== undefined && <span className="meta">{view.rtt} ms</span>}
         <span style={{ marginLeft: "auto", color: "var(--muted)" }}>{APP_VERSION}</span>
       </header>
@@ -148,9 +168,24 @@ function StudentView({
             </>
           )}
           {view.state === "connecting" && <h2>Connecting…</h2>}
-          {(view.state === "connected" || view.state === "degraded") && (
-            <h2 style={{ color: "var(--muted)" }}>Ready</h2>
-          )}
+          {(view.state === "connected" || view.state === "degraded") &&
+            (media.broadcast.on && media.teacherTrack ? (
+              <>
+                <VideoView
+                  track={media.teacherTrack}
+                  className="teacher-video"
+                  data-teacher={media.broadcast.source ?? "video"}
+                  onPlaying={() => setPlaying(true)}
+                />
+                {!playing && (
+                  <p className="caption">
+                    Teacher's {media.broadcast.source === "screen" ? "screen" : "camera"}
+                  </p>
+                )}
+              </>
+            ) : (
+              <h2 style={{ color: "var(--muted)" }}>Ready</h2>
+            ))}
           {(view.state === "gathering" || view.state === "idle" || view.state === "none") && (
             <h2>Starting…</h2>
           )}

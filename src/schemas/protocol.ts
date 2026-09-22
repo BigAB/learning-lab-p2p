@@ -1,5 +1,12 @@
 import { z } from "zod";
 import { WsSchema } from "./ws";
+import {
+  MediaAnswerSchema,
+  MediaBroadcastSchema,
+  MediaOfferSchema,
+  MediaRequestSchema,
+  MediaStatusSchema,
+} from "./media";
 
 /** Safari's DataChannel message limit. Larger messages are chunked. */
 export const MAX_FRAME_BYTES = 16384;
@@ -10,6 +17,8 @@ export const HelloSchema = z.object({
   ws: WsSchema,
   appVersion: z.string().min(1).max(64),
   ua: z.string().max(512),
+  /** Optional feature flags; a Phase 2 build sends ["media"]. Strings, not an enum, so newer peers parse. */
+  caps: z.array(z.string().min(1).max(16)).max(8).optional(),
 });
 export const HbSchema = z.object({
   t: z.literal("hb"),
@@ -47,6 +56,11 @@ export const LabMessageSchema = z.discriminatedUnion("t", [
   StatusSchema,
   CmdSchema,
   ChunkSchema,
+  MediaOfferSchema,
+  MediaAnswerSchema,
+  MediaRequestSchema,
+  MediaStatusSchema,
+  MediaBroadcastSchema,
 ]);
 
 export type HelloMessage = z.infer<typeof HelloSchema>;
@@ -57,8 +71,8 @@ export type CmdMessage = z.infer<typeof CmdSchema>;
 export type ChunkMessage = z.infer<typeof ChunkSchema>;
 export type LabMessage = z.infer<typeof LabMessageSchema>;
 
-/** Reserved namespaces. Empty until their phase's spec exists. Do not squat. */
-export type MediaMessage = never; // Phase 2: media.offer / media.answer / media.request
+/** Phase 2 media messages live in ./media. The remaining namespaces stay empty until their phase. */
+export type { MediaMessage } from "./media";
 export type CollabMessage = never; // Phase 3
 export type RecMessage = never; // Phase 4
 export type LogMessage = never; // Phase 5

@@ -1,5 +1,7 @@
 export interface RtcFactory {
   create(config: RTCConfiguration): RTCPeerConnection;
+  /** Receive-side video codec capabilities, for setCodecPreferences. Absent ⇒ engine defaults. */
+  videoCodecs?(): RTCRtpCodec[];
 }
 
 /**
@@ -28,4 +30,19 @@ export interface DevicePort {
   visibility(): Visibility;
   onVisibility(cb: (v: Visibility) => void): () => void;
   battery(): Promise<{ level: number; charging: boolean } | undefined>;
+}
+
+export interface CaptureConstraints {
+  width: number;
+  height: number;
+  frameRate: number;
+}
+
+/**
+ * Capture lives behind a port so core never touches `navigator`. `screen()` must be invoked
+ * synchronously inside a user gesture: Chrome's getDisplayMedia needs transient activation.
+ */
+export interface MediaPort {
+  camera(c: CaptureConstraints): Promise<MediaStreamTrack>;
+  screen(): Promise<MediaStreamTrack>;
 }

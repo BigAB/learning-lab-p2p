@@ -6,6 +6,7 @@ import { chunkMessage, Reassembler } from "./chunker";
 import type { Clock, TimerHandle } from "./clock";
 import { Emitter } from "./events";
 import { Heartbeat } from "./heartbeat";
+import { MediaLink, type MediaTimers } from "./mediaLink";
 import type { RtcFactory } from "./ports";
 import { buildSdp, extractPayload } from "./sdpCodec";
 
@@ -37,6 +38,9 @@ export interface PeerSessionOpts {
   certificates?: RTCCertificate[];
   appVersion: string;
   ua: string;
+  /** Feature flags advertised in hello (Phase 2 sends ["media"]). */
+  caps?: string[];
+  mediaTimers?: Partial<MediaTimers>;
 }
 
 export type PeerSessionEvents = {
@@ -49,6 +53,8 @@ export type PeerSessionEvents = {
   inbound: [];
   needsRepair: [string];
   ignored: [string];
+  /** The media link for this session, created at DC open (before `hello` goes out). */
+  media: [MediaLink];
 };
 
 /**
@@ -62,6 +68,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   ignoredCount = 0;
   lastRtt: number | undefined;
   remoteHello: HelloMessage | undefined;
+  media: MediaLink | null = null;
 
   private readonly timers: SessionTimers;
   private pc: RTCPeerConnection | null = null;
@@ -208,12 +215,27 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       },
     });
     this.hb.start();
+    if (this.pc) {
+      const codecs = this.opts.rtc.videoCodecs?.();
+      const link = new MediaLink({
+        role: this.role,
+        pc: this.pc,
+        send: (m) => this.send(m),
+        clock: this.opts.clock,
+        ...(codecs ? { codecs } : {}),
+        ...(this.opts.mediaTimers ? { timers: this.opts.mediaTimers } : {}),
+      });
+      link.on("ignored", (why) => this.ignore(why));
+      this.media = link;
+      this.emit("media", link);
+    }
     this.send({
       t: "hello",
       role: this.role,
       ws: this.ws,
       appVersion: this.opts.appVersion,
       ua: this.opts.ua,
+      ...(this.opts.caps ? { caps: this.opts.caps } : {}),
     });
     this.setState("connected");
   }
@@ -248,6 +270,13 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       case "hello":
         this.remoteHello = m;
         this.emit("hello", m);
+        return;
+      case "media.offer":
+      case "media.answer":
+      case "media.request":
+      case "media.status":
+      case "media.broadcast":
+        this.media?.handle(m);
         return;
       default:
         this.emit("message", m);
@@ -306,6 +335,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
   }
 
   private teardown(): void {
+    this.media?.close();
     this.clearConnectTimer();
     if (this.degradedTimer !== undefined) this.opts.clock.clearTimeout(this.degradedTimer);
     this.degradedTimer = undefined;

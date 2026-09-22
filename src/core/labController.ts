@@ -1,4 +1,6 @@
 import type { CmdMessage } from "../schemas/protocol";
+import type { CamState, MediaSource, Profile } from "../schemas/media";
+import { MEDIA_CAP } from "../schemas/media";
 import type { SdpPayload } from "../schemas/sdpPayload";
 import type { Settings, TeacherState } from "../schemas/storage";
 import {
@@ -9,11 +11,13 @@ import {
 } from "../schemas/storage";
 import { LEGACY_TEACHER_KEY } from "../schemas/legacy";
 import { compareWs, wsKey } from "../schemas/ws";
-import type { Clock } from "./clock";
+import type { Clock, TimerHandle } from "./clock";
 import { Emitter } from "./events";
+import { CAPTURE, type Degradation } from "./media";
+import type { MediaLink, MediaState, MediaStatsView, MediaTimers } from "./mediaLink";
 import { migrateTeacherV1 } from "./migrations";
 import { PeerSession, type SessionState } from "./peerSession";
-import type { KeyValueStore, RtcFactory, Visibility } from "./ports";
+import type { KeyValueStore, MediaPort, RtcFactory, Visibility } from "./ports";
 import { loadState, saveState } from "./store";
 
 export interface TeacherEnv {
@@ -24,6 +28,20 @@ export interface TeacherEnv {
   ua: string;
   certificates?: RTCCertificate[];
   log?(msg: string): void;
+  media?: MediaPort;
+  mediaTimers?: Partial<MediaTimers>;
+  /** Stats poll period while media is active. */
+  statsMs?: number;
+}
+
+export interface TileMedia {
+  state: MediaState;
+  reason?: string;
+  cam: CamState;
+  send: Profile | null;
+  /** The student's video, once negotiated. The UI wraps it in a MediaStream. */
+  track?: MediaStreamTrack;
+  stats?: MediaStatsView;
 }
 
 export interface RosterView {
@@ -51,6 +69,7 @@ export interface RosterView {
   fingerprintChanged: boolean;
   /** This pairing replaced a session that was still connected/degraded. Cleared by acknowledgeReplaced(). */
   replaced: boolean;
+  media: TileMedia;
   history: { at: number; state: SessionState }[];
 }
 
@@ -66,6 +85,13 @@ interface Live {
   fingerprintChanged: boolean;
   replaced: boolean;
   history: { at: number; state: SessionState }[];
+  media: {
+    cam: CamState;
+    send: Profile | null;
+    reason?: string;
+    track?: MediaStreamTrack;
+    stats?: MediaStatsView;
+  };
 }
 
 export type LabEvents = { change: [] };
@@ -83,6 +109,7 @@ const HISTORY_CAP = 50;
  * immediately because "when did we lose it" is exactly the number the dashboard then needs.
  */
 const SEEN_PERSIST_MS = 60_000;
+const DEFAULT_STATS_MS = 2000;
 
 /** Raw sha-256 fingerprint bytes → the `AA:BB:…` form the browser and the drawer both show. */
 function hexFingerprint(fp: Uint8Array): string {
@@ -95,6 +122,13 @@ export class LabController extends Emitter<LabEvents> {
   /** Keyed by wsKey(ws). */
   readonly sessions = new Map<string, PeerSession>();
   private readonly live = new Map<string, Live>();
+  readonly broadcast: { source: MediaSource | null; track: MediaStreamTrack | null } = {
+    source: null,
+    track: null,
+  };
+  /** wsKey of the focused station, if any. */
+  focused: string | undefined;
+  private statsTimer: TimerHandle | undefined;
 
   constructor(private readonly env: TeacherEnv) {
     super();
@@ -161,7 +195,9 @@ export class LabController extends Emitter<LabEvents> {
       timers: { heartbeatMs, degradedMs, failedMs },
       appVersion: this.env.appVersion,
       ua: this.env.ua,
+      caps: [MEDIA_CAP],
       ...(this.env.certificates ? { certificates: this.env.certificates } : {}),
+      ...(this.env.mediaTimers ? { mediaTimers: this.env.mediaTimers } : {}),
     });
     this.sessions.set(key, s);
     const e = this.entry(ws);
@@ -174,7 +210,12 @@ export class LabController extends Emitter<LabEvents> {
     // History is the station's story across the lab day, not this session's: a re-pair continues
     // it rather than wiping the evidence of why the last one died.
     const previous = this.live.get(key);
-    this.live.set(key, { history: previous?.history ?? [], fingerprintChanged, replaced });
+    this.live.set(key, {
+      history: previous?.history ?? [],
+      fingerprintChanged,
+      replaced,
+      media: { cam: "off", send: null },
+    });
     this.wire(s);
     this.persist();
 
@@ -218,9 +259,11 @@ export class LabController extends Emitter<LabEvents> {
     if (!(key in this.state.roster) && !this.sessions.has(key)) return false;
     // Close first: the failed transition's handlers still read live/roster for this key.
     this.sessions.get(key)?.close();
+    if (this.focused === key) this.focused = undefined;
     this.sessions.delete(key);
     this.live.delete(key);
     delete this.state.roster[key];
+    this.syncStats();
     this.persist();
     return true;
   }
@@ -235,6 +278,70 @@ export class LabController extends Emitter<LabEvents> {
 
   sendCmd(ws: string, cmd: CmdMessage["cmd"]): void {
     this.sessions.get(wsKey(ws))?.send({ t: "cmd", cmd });
+  }
+
+  /**
+   * Start sending the teacher's camera or screen to every ready station. The port is called
+   * before the first await so a click handler's user activation still covers getDisplayMedia.
+   */
+  async startBroadcast(source: MediaSource): Promise<void> {
+    const port = this.env.media;
+    if (!port) throw new Error("no media port");
+    const pending = source === "camera" ? port.camera(CAPTURE) : port.screen();
+    const track = await pending;
+    this.stopBroadcastTrack();
+    this.broadcast.source = source;
+    this.broadcast.track = track;
+    track.onended = () => {
+      if (this.broadcast.track === track) this.stopBroadcast();
+    };
+    for (const s of this.sessions.values()) this.applyBroadcast(s);
+    this.syncStats();
+    this.changed();
+  }
+
+  stopBroadcast(): void {
+    if (this.broadcast.source === null && this.broadcast.track === null) return;
+    this.stopBroadcastTrack();
+    this.broadcast.source = null;
+    for (const s of this.sessions.values()) this.applyBroadcast(s);
+    this.syncStats();
+    this.changed();
+  }
+
+  /** Thumbnails from every station (persisted preference). */
+  setCameras(on: boolean): void {
+    this.state.settings.media.cameras = on;
+    for (const [key, s] of this.sessions) this.readyLink(s)?.request(this.desiredSend(key));
+    this.syncStats();
+    this.persist();
+  }
+
+  /** Raise one station to the focus profile; null clears. Unknown ws ⇒ no change. */
+  focus(ws: string | null): void {
+    const key = ws === null ? undefined : wsKey(ws);
+    if (key !== undefined && !this.sessions.has(key)) return;
+    const prev = this.focused;
+    if (prev === key) return;
+    this.focused = key;
+    if (prev !== undefined) {
+      const s = this.sessions.get(prev);
+      if (s) this.readyLink(s)?.request(this.desiredSend(prev));
+    }
+    if (key !== undefined) {
+      const s = this.sessions.get(key);
+      if (s) this.readyLink(s)?.request(this.desiredSend(key));
+    }
+    this.syncStats();
+    this.changed();
+  }
+
+  /** Re-offer media to a station whose negotiation failed. */
+  retryMedia(ws: string): boolean {
+    const link = this.sessions.get(wsKey(ws))?.media;
+    if (!link || link.state !== "failed") return false;
+    void link.offer(this.state.settings.media.codec);
+    return true;
   }
 
   /** Stations that need a walk: known but no session this run, or hard-failed. Natural order. */
@@ -252,6 +359,23 @@ export class LabController extends Emitter<LabEvents> {
       const e = this.state.roster[key]!;
       const s = this.sessions.get(key);
       const l = this.live.get(key);
+      // A failed session has torn its media down (spec §4.5): MediaLink.close() never flips
+      // `.state` off "ready", so a dead session's link would otherwise be reported as live.
+      const failed = s?.state === "failed";
+      const link = failed ? undefined : s?.media;
+      const media: TileMedia = failed
+        ? { state: "none", cam: "off", send: null }
+        : {
+            state: link?.state ?? "none",
+            cam: l?.media.cam ?? "off",
+            send: l?.media.send ?? null,
+          };
+      if (!failed) {
+        const reason = link?.reason ?? l?.media.reason;
+        if (reason !== undefined) media.reason = reason;
+        if (l?.media.track) media.track = l.media.track;
+        if (l?.media.stats) media.stats = l.media.stats;
+      }
       const view: RosterView = {
         key,
         ws: e.ws,
@@ -260,6 +384,7 @@ export class LabController extends Emitter<LabEvents> {
           l?.remoteAppVersion !== undefined && l.remoteAppVersion !== this.env.appVersion,
         fingerprintChanged: l?.fingerprintChanged ?? false,
         replaced: l?.replaced ?? false,
+        media,
         history: l ? [...l.history] : [],
       };
       if (e.lastFingerprint !== undefined) view.fingerprint = e.lastFingerprint;
@@ -305,6 +430,8 @@ export class LabController extends Emitter<LabEvents> {
         l.history.push({ at: this.env.clock.now(), state: st });
         if (l.history.length > HISTORY_CAP) l.history.splice(0, l.history.length - HISTORY_CAP);
       }
+      if (st === "failed" && this.focused === key) this.focused = undefined;
+      if (st === "failed") this.syncStats();
       // Only a fresh handshake (connecting → connected) counts as a pairing; recovering from
       // degraded is the same pairing continuing, not a new one.
       if (st === "connected" && prev === "connecting") {
@@ -336,7 +463,19 @@ export class LabController extends Emitter<LabEvents> {
       const l = this.live.get(key);
       if (l) l.remoteAppVersion = h.appVersion;
       this.persist();
+      const link = s.media;
+      if (link) {
+        if (h.caps?.includes(MEDIA_CAP)) {
+          if (link.state === "none")
+            link
+              .offer(this.state.settings.media.codec)
+              .catch((e: unknown) =>
+                this.env.log?.(`media offer failed: ${e instanceof Error ? e.message : String(e)}`),
+              );
+        } else link.markUnsupported();
+      }
     });
+    s.on("media", (link) => this.wireMedia(key, s, link));
     s.on("rtt", (ms) => {
       const e = this.entry(ws);
       e.lastRtt = ms;
@@ -353,6 +492,114 @@ export class LabController extends Emitter<LabEvents> {
       this.changed();
     });
     s.on("needsRepair", (reason) => this.env.log?.(`ws ${ws} failed: ${reason}`));
+  }
+
+  private wireMedia(key: string, s: PeerSession, link: MediaLink): void {
+    link.on("state", (st) => {
+      if (st === "ready") {
+        this.applyBroadcast(s);
+        link.request(this.desiredSend(key));
+      }
+      if (st === "failed" && this.focused === key) this.focused = undefined;
+      this.syncStats();
+      this.changed();
+    });
+    link.on("status", (m) => {
+      const l = this.live.get(key);
+      if (l) {
+        l.media.cam = m.cam;
+        l.media.send = m.send;
+        if (m.reason !== undefined) l.media.reason = m.reason;
+        else delete l.media.reason;
+      }
+      this.changed();
+    });
+    link.on("remoteTrack", (track) => {
+      const l = this.live.get(key);
+      if (l) l.media.track = track;
+      this.changed();
+    });
+  }
+
+  private desiredSend(key: string): Profile | null {
+    const m = this.state.settings.media;
+    if (this.focused === key) return m.focus;
+    return m.cameras ? m.thumb : null;
+  }
+
+  /** Push the current broadcast (or its absence) to one ready link. */
+  private applyBroadcast(s: PeerSession): void {
+    const link = this.readyLink(s);
+    if (!link) return;
+    const { source, track } = this.broadcast;
+    const m = this.state.settings.media;
+    const profile =
+      source === "camera" ? m.broadcastCamera : source === "screen" ? m.broadcastScreen : null;
+    const degradation: Degradation = source === "screen" ? "maintain-resolution" : "balanced";
+    void link.setOutbound(track, profile, degradation);
+    if (source) link.broadcast(true, source);
+    else link.broadcast(false);
+  }
+
+  private stopBroadcastTrack(): void {
+    const t = this.broadcast.track;
+    if (t) {
+      t.onended = null;
+      t.stop();
+    }
+    this.broadcast.track = null;
+  }
+
+  private mediaActive(): boolean {
+    return (
+      this.broadcast.source !== null ||
+      this.state.settings.media.cameras ||
+      this.focused !== undefined
+    );
+  }
+
+  /**
+   * The station's media link, but only when the session itself is still alive. MediaLink.close()
+   * never changes `.state` off "ready", so a failed session's link would otherwise still look
+   * ready forever: callers that need to actually push/pull media, or decide whether one is
+   * doing so, must go through here rather than reading `s.media` directly.
+   */
+  private readyLink(s: PeerSession): MediaLink | undefined {
+    const link = s.media;
+    if (!link || link.state !== "ready") return undefined;
+    return s.state === "connected" || s.state === "degraded" ? link : undefined;
+  }
+
+  /** Poll getStats only while something is streaming and someone is ready to report. */
+  private syncStats(): void {
+    const anyReady = [...this.sessions.values()].some((s) => this.readyLink(s) !== undefined);
+    const want = this.mediaActive() && anyReady;
+    if (want && this.statsTimer === undefined) {
+      this.statsTimer = this.env.clock.setInterval(
+        () => void this.pollStats(),
+        this.env.statsMs ?? DEFAULT_STATS_MS,
+      );
+    } else if (!want && this.statsTimer !== undefined) {
+      this.env.clock.clearInterval(this.statsTimer);
+      this.statsTimer = undefined;
+    }
+  }
+
+  private async pollStats(): Promise<void> {
+    const jobs: Promise<void>[] = [];
+    for (const [key, s] of this.sessions) {
+      const link = this.readyLink(s);
+      if (!link) continue;
+      jobs.push(
+        link.stats().then((v) => {
+          const l = this.live.get(key);
+          if (l) l.media.stats = v;
+        }),
+      );
+    }
+    if (jobs.length === 0) return;
+    await Promise.all(jobs);
+    this.changed();
   }
 
   /** Update the live sighting; `persist` also copies it into the roster entry (caller saves). */

@@ -1,6 +1,6 @@
 # AGENTS.md — Learning Lab P2P
 
-Instructions for AI coding agents and humans working in this repo. Read the current spec before touching code: [docs/superpowers/specs/2026-09-20-p2p-core-design.md](docs/superpowers/specs/2026-09-20-p2p-core-design.md), as amended by [docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md](docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md).
+Instructions for AI coding agents and humans working in this repo. Read the current spec before touching code: [docs/superpowers/specs/2026-09-20-p2p-core-design.md](docs/superpowers/specs/2026-09-20-p2p-core-design.md), as amended by [docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md](docs/superpowers/specs/2026-09-21-variable-workstation-ids-design.md), and extended by [docs/superpowers/specs/2026-09-21-phase2-media-design.md](docs/superpowers/specs/2026-09-21-phase2-media-design.md) (Phase 2 media).
 
 ## What this is
 
@@ -17,6 +17,8 @@ Roles by pathname: `/student?ws=ID`, `/teacher`, `/courier`, `/dev/load`.
 - **iPads are WebKit.** Chrome on iOS is WebKit. No browser policies available. Kiosk = Home Screen web app + MDM Single App Mode + Auto-Lock Never.
 - **The QR codec is DataChannel-only, forever.** Media renegotiation (Phase 2+) sends full SDP over the DataChannel.
 - **Signaling is a pluggable interface.** `SignalingTransport` in core; `QrCourierTransport` now, GitHub dead-drop later. `PeerSession` must never know which.
+- **Media: video only, teacher is the sole offerer, negotiate once.** No audio. The teacher sends one `media.offer` per session (two video transceivers); after that only `replaceTrack` and `setParameters`. Quality never renegotiates. Media failures never fail the session.
+- **Capture only while asked.** A student's camera is on only while a ready link has a non-null `media.request`; any failure stops it. Cameras default off.
 
 ## Stack
 
@@ -30,7 +32,8 @@ Vite · React · TypeScript (strict) · Zod · pnpm · ESLint + Prettier · `nod
 4. **Unknown DC message `t` → ignore + count.** Never throw on the wire.
 5. **Persistence reads always have defaults.** Corrupt blob → log, reset, continue. Never crash on storage.
 6. **Timers are injectable.** `heartbeatMs` / `degradedMs` / `failedMs` come from settings and are overridable in tests.
-7. **Reserved namespaces stay reserved.** `media.*`, `collab.*`, `rec.*`, `log.*` are typed as empty unions until their phase. Don't squat on them.
+7. **Reserved namespaces stay reserved.** `media.*` is live (Phase 2, `src/schemas/media.ts`). `collab.*`, `rec.*`, `log.*` are typed as empty unions until their phase. Don't squat on them.
+8. **Core hands out `MediaStreamTrack`s, never builds a `MediaStream`.** `<VideoView>` is the only place `new MediaStream()` appears. Capture goes through `MediaPort`.
 
 ## Change rules
 
@@ -59,6 +62,7 @@ pnpm build          # vite build → dist/
 - E2E: `test/e2e/**` — two browser contexts P2P over loopback; camera bypassed by reading the QR element's `data-payload` and injecting into the other context. Keep that attribute. `scanner.spec.ts` is the exception: it feeds a generated QR clip to Chromium's fake camera so the real `<Scanner>` path is exercised. Tiles are addressed by `data-tile="<wsKey>"`; use the `tile(ws)` helper.
 - Fixtures: `test/fixtures/sdp/` — real captured SDPs from Safari and Chrome. Add one when you see a new browser variant.
 - Manual: `docs/lab-checklist.md` before any lab day.
+- Media e2e (`media.spec.ts`) reads `window.__lab.mediaStats(ws)` / `window.__lab.activeTracks()` (dev-only). `media-renegotiation.spec.ts` runs in **both** engines and guards the SDP template against the media offer; a WebKit failure there is fixed in `buildSdp`, not in `MediaLink`.
 
 ## Deploy
 
@@ -67,5 +71,5 @@ Push to `main` → `pages.yml` builds and deploys. `VITE_BASE` is derived from `
 ## Roadmap
 
 Phase 1 (this spec): DC connectivity, QR signaling, heartbeat, dashboard.
-Phase 2: bidirectional media over renegotiation. Phase 3: collab (screen share, whiteboard, chat). Phase 4: recording. Phase 5: analytics.
+Phase 2 (media spec): student thumbnails + focus, teacher camera/screen broadcast, `media.*` over the DataChannel. Phase 3: collab (student screen share, whiteboard, chat). Phase 4: recording. Phase 5: analytics.
 Optional at any point: `GitHubDeadDropTransport` for automatic re-pair.

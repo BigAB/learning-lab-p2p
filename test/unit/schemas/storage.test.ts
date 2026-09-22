@@ -48,3 +48,27 @@ test("roster entries carry a display ws and must sit under their own wsKey", () 
   const missing = TeacherStateSchema.safeParse({ roster: { "7": { pairCount: 1 } } });
   assert.equal(missing.success, false, "ws is required on every entry");
 });
+
+test("settings.media defaults fill an old blob and the key stays v2", () => {
+  const t = TeacherStateSchema.parse({ settings: { heartbeatMs: 5000 } });
+  assert.equal(t.settings.media.cameras, false);
+  assert.equal(t.settings.media.codec, "h264");
+  assert.deepEqual(t.settings.media.thumb, { height: 180, fps: 10, kbps: 150 });
+  assert.deepEqual(t.settings.media.focus, { height: 720, fps: 15, kbps: 1200 });
+  assert.deepEqual(t.settings.media.broadcastCamera, { height: 360, fps: 15, kbps: 600 });
+  assert.deepEqual(t.settings.media.broadcastScreen, { height: 720, fps: 5, kbps: 1000 });
+  assert.equal(TEACHER_KEY, "lab.teacher.v2");
+});
+
+test("settings.media rejects a bad profile or codec", () => {
+  assert.equal(
+    TeacherStateSchema.safeParse({ settings: { media: { codec: "av1" } } }).success,
+    false,
+  );
+  assert.equal(
+    TeacherStateSchema.safeParse({
+      settings: { media: { thumb: { height: 240, fps: 10, kbps: 150 } } },
+    }).success,
+    false,
+  );
+});
