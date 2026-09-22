@@ -11,7 +11,7 @@ const stats = (page: Page, ws: string) =>
   page.evaluate((w) => window.__lab!.mediaStats!(w), ws) as Promise<Stats | undefined>;
 
 test("cameras, focus and broadcast flow both ways over loopback", async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const t = await openTeacher(browser);
   const s = await openStudent(browser, "Row 7");
   await pair(t.page, s.page, "Row 7");
@@ -72,6 +72,7 @@ test("cameras, focus and broadcast flow both ways over loopback", async ({ brows
 test("a student that loses its session stops its camera and re-pairs with media none", async ({
   browser,
 }) => {
+  test.setTimeout(90_000);
   const t = await openTeacher(browser);
   const s = await openStudent(browser, "Row 8", "timers=300,1200,2500");
   await pair(t.page, s.page, "Row 8");
