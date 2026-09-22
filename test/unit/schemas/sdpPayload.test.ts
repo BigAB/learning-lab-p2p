@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { SdpPayloadSchema, CompactPayloadSchema } from "../../../src/schemas/sdpPayload";
 
 const base = {
-  v: 1,
+  v: 2,
   role: "offer",
-  ws: 7,
+  ws: "7",
   mid: "0",
   ufrag: "kJ3q",
   pwd: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
@@ -25,9 +25,9 @@ test("rejects wrong fingerprint length and empty candidates", () => {
 
 test("compact form requires 43-char base64url fingerprint", () => {
   const c = {
-    v: 1,
+    v: 2,
     r: "o",
-    w: 7,
+    w: "7",
     m: "0",
     u: "kJ3q",
     p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
@@ -56,9 +56,9 @@ test("rejects SDP-injection charsets in ip, ufrag, pwd and mid", () => {
 
 test("compact form applies the same charset rules", () => {
   const c = {
-    v: 1,
+    v: 2,
     r: "o",
-    w: 7,
+    w: "7",
     m: "0",
     u: "kJ3q",
     p: "Yl6wO9zZ0z3XZ7RlN4CkO0Ul",
@@ -69,4 +69,11 @@ test("compact form applies the same charset rules", () => {
   assert.equal(CompactPayloadSchema.safeParse({ ...c, c: [["10.0.0.1\r\nx", 1]] }).success, false);
   assert.equal(CompactPayloadSchema.safeParse({ ...c, u: "kJ3q\r\n" }).success, false);
   assert.equal(CompactPayloadSchema.safeParse({ ...c, m: "0;" }).success, false);
+});
+
+test("v2 payload: ws is a tidied string; numbers and off-charset IDs are rejected", () => {
+  assert.equal(SdpPayloadSchema.parse({ ...base, ws: " Row  2 " }).ws, "Row 2");
+  assert.equal(SdpPayloadSchema.safeParse({ ...base, ws: 7 }).success, false);
+  assert.equal(SdpPayloadSchema.safeParse({ ...base, ws: "Row#2" }).success, false);
+  assert.equal(SdpPayloadSchema.safeParse({ ...base, v: 1 }).success, false, "v1 is gone");
 });

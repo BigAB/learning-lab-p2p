@@ -4,7 +4,7 @@ import { LabMessageSchema, MAX_FRAME_BYTES } from "../../../src/schemas/protocol
 
 test("accepts every phase-1 message", () => {
   const ok = [
-    { t: "hello", role: "student", ws: 7, appVersion: "abc1234", ua: "Safari" },
+    { t: "hello", role: "student", ws: "7", appVersion: "abc1234", ua: "Safari" },
     { t: "hb", seq: 1, ts: 1700000000000 },
     { t: "hb-ack", seq: 1, ts: 1700000000000 },
     { t: "status", visibility: "visible", wakeLock: true },
@@ -18,7 +18,8 @@ test("accepts every phase-1 message", () => {
 test("rejects unknown t, bad ws, bad cmd, out-of-range battery", () => {
   const bad = [
     { t: "nope" },
-    { t: "hello", role: "student", ws: 31, appVersion: "x", ua: "y" },
+    { t: "hello", role: "student", ws: "", appVersion: "x", ua: "y" },
+    { t: "hello", role: "student", ws: 7, appVersion: "x", ua: "y" },
     { t: "cmd", cmd: "format-disk" },
     { t: "status", battery: 1.5, visibility: "visible", wakeLock: true },
     { t: "chunk", id: "abc", i: -1, n: 2, data: "xx" },

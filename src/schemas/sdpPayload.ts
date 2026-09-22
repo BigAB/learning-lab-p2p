@@ -23,7 +23,7 @@ export type Candidate = z.infer<typeof CandidateSchema>;
 
 /** Everything a peer cannot infer about our DataChannel-only SDP. */
 export const SdpPayloadSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(2),
   role: z.enum(["offer", "answer"]),
   ws: WsSchema,
   mid: z.string().min(1).max(16).regex(MID_CHAR, "mid charset"),
@@ -39,7 +39,7 @@ export type SdpPayload = z.infer<typeof SdpPayloadSchema>;
 
 /** Short-key JSON form that is deflated into the QR. */
 export const CompactPayloadSchema = z.object({
-  v: z.literal(1),
+  v: z.literal(2),
   r: z.enum(["o", "a"]),
   w: WsSchema,
   m: z.string().min(1).max(16).regex(MID_CHAR, "mid charset"),
