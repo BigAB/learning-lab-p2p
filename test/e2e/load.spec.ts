@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 
 /**
  * /dev/load runs N auto-pairing student iframes against one LabController on a single page.
- * All iframes share the page's localStorage origin (each student overwrites lab.student.v2),
- * which is fine here since ws comes from the iframe's URL, not from persisted state.
+ * All iframes share the page's localStorage origin, so every student overwrites lab.student.v2;
+ * an autopair iframe must therefore take its ws from the URL and never raise the conflict prompt.
  */
 test("dev/load pairs 5 students against one teacher", async ({ page }) => {
   await page.goto("/dev/load");
@@ -13,6 +13,28 @@ test("dev/load pairs 5 students against one teacher", async ({ page }) => {
   await expect(page.locator("[data-tile][data-state='connected']")).toHaveCount(5, {
     timeout: 30_000,
   });
+});
+
+test("dev/load iframes ignore a stored workstation ID that differs from their URL", async ({
+  page,
+}) => {
+  // The first iframe to boot persists its ws; with 30 iframes most of the rest read storage after
+  // that write and would see "This iPad was 1, the address says N". Seed the worst case up front.
+  await page.addInitScript(() => {
+    localStorage.setItem("lab.student.v2", JSON.stringify({ ws: "99", pairCount: 0 }));
+  });
+  await page.goto("/dev/load");
+  const count = page.locator("[data-load-count]");
+  await count.fill("5");
+  await count.dispatchEvent("change");
+  await expect(page.locator("[data-tile][data-state='connected']")).toHaveCount(5, {
+    timeout: 30_000,
+  });
+  for (const ws of ["1", "2", "3", "4", "5"]) {
+    const frame = page.frameLocator(`iframe[title='student ${ws}']`);
+    await expect(frame.locator("h1", { hasText: "Which workstation" })).toHaveCount(0);
+    await expect(frame.locator(".bar .ws")).toHaveText(ws);
+  }
 });
 
 test("dev/load streams 5 thumbnails and a camera broadcast", async ({ page }) => {

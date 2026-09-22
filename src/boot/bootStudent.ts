@@ -21,11 +21,25 @@ export interface ResolvedWs {
   urlInvalid: boolean;
 }
 
+/**
+ * Dev-only: true inside a /dev/load student iframe. Those iframes share one localStorage, so the
+ * first one to boot persists its ws and every later one would read a conflicting stored ID; the
+ * URL is the only identity that means anything there. Same guard as the autopair bridge below.
+ */
+function isAutopairFrame(): boolean {
+  return (
+    import.meta.env.DEV &&
+    window.parent !== window &&
+    new URLSearchParams(location.search).get("autopair") === "1"
+  );
+}
+
 export function resolveWs(): ResolvedWs {
   const raw = new URLSearchParams(location.search).get("ws");
   const parsed = WsSchema.safeParse(raw);
   const out: ResolvedWs = { urlInvalid: raw !== null && !parsed.success };
   if (raw !== null && parsed.success) out.urlWs = parsed.data;
+  if (isAutopairFrame()) return out;
   const stored = StudentController.persistedWs(browserKv);
   if (stored !== undefined) out.storedWs = stored;
   return out;
