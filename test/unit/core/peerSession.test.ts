@@ -12,15 +12,15 @@ const TIMERS = {
   connectMs: 20000,
   gatherMs: 3000,
 };
-const offerPayload = extractPayload(CHROME_OFFER, "offer", 7);
-const answerPayload = extractPayload(SAFARI_ANSWER, "answer", 7);
+const offerPayload = extractPayload(CHROME_OFFER, "offer", "7");
+const answerPayload = extractPayload(SAFARI_ANSWER, "answer", "7");
 
 function student() {
   const rtc = new FakeRtcFactory();
   const clock = new FakeClock();
   const s = new PeerSession({
     role: "student",
-    ws: 7,
+    ws: "7",
     rtc,
     clock,
     timers: TIMERS,
@@ -70,10 +70,10 @@ test("student: gathering proceeds after gatherMs even if never 'complete'", asyn
 test("student: applyRemote → connecting; dc open → connected; hello sent", async () => {
   const { s, dc, states } = await connectedStudent();
   assert.deepEqual(states, ["gathering", "awaiting-remote", "connecting", "connected"]);
-  const first = dc.sentJson()[0] as { t: string; role: string; ws: number };
+  const first = dc.sentJson()[0] as { t: string; role: string; ws: string };
   assert.equal(first.t, "hello");
   assert.equal(first.role, "student");
-  assert.equal(first.ws, 7);
+  assert.equal(first.ws, "7");
   assert.equal((s as PeerSession).state, "connected");
 });
 
@@ -143,7 +143,7 @@ test("inbound hb gets hb-ack; hello recorded; other messages emitted", async () 
   s.on("message", (m) => got.push(m));
   dc.receive(JSON.stringify({ t: "hb", seq: 3, ts: 99 }));
   assert.deepEqual(dc.sentJson().at(-1), { t: "hb-ack", seq: 3, ts: 99 });
-  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: 7, appVersion: "t1", ua: "mac" }));
+  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: "7", appVersion: "t1", ua: "mac" }));
   assert.equal(s.remoteHello?.role, "teacher");
   dc.receive(JSON.stringify({ t: "cmd", cmd: "ping" }));
   assert.deepEqual(got, [{ t: "cmd", cmd: "ping" }]);
@@ -198,7 +198,7 @@ test("teacher: applyRemote(offer) from idle → gathering → localPayload(answe
   const clock = new FakeClock();
   const t = new PeerSession({
     role: "teacher",
-    ws: 7,
+    ws: "7",
     rtc,
     clock,
     timers: TIMERS,
@@ -226,7 +226,7 @@ test("teacher: applyRemote(offer) from idle → gathering → localPayload(answe
 test("teacher: start() is rejected", async () => {
   const t = new PeerSession({
     role: "teacher",
-    ws: 1,
+    ws: "1",
     rtc: new FakeRtcFactory(),
     clock: new FakeClock(),
     appVersion: "t",
@@ -240,7 +240,7 @@ test("passes certificates into the pc config", async () => {
   const cert = { expires: 1 } as unknown as RTCCertificate;
   const s = new PeerSession({
     role: "student",
-    ws: 1,
+    ws: "1",
     rtc,
     clock: new FakeClock(),
     certificates: [cert],
@@ -368,10 +368,36 @@ test("student rejects an answer addressed to another workstation", async () => {
   await flush();
   rtc.last().completeGathering();
   await p;
-  const foreign = extractPayload(SAFARI_ANSWER, "answer", 9);
+  const foreign = extractPayload(SAFARI_ANSWER, "answer", "9");
   await assert.rejects(s.applyRemote(foreign), /workstation 9, not 7/);
   assert.equal(s.state, "awaiting-remote");
   assert.equal(rtc.last().remoteDescription, null, "the pc must not be touched");
+});
+
+test("an answer whose ws differs only in case is for us", async () => {
+  const ctx = student();
+  const p = ctx.s.start();
+  await flush();
+  ctx.rtc.last().completeGathering();
+  await p;
+  const shouted = extractPayload(SAFARI_ANSWER, "answer", "ROW 7");
+  const s2 = new PeerSession({
+    role: "student",
+    ws: "row 7",
+    rtc: ctx.rtc,
+    clock: ctx.clock,
+    timers: TIMERS,
+    appVersion: "t1",
+    ua: "test",
+  });
+  const p2 = s2.start();
+  await flush();
+  ctx.rtc.last().completeGathering();
+  await p2;
+  await s2.applyRemote(shouted);
+  assert.equal(s2.state, "connecting");
+  ctx.s.close();
+  s2.close();
 });
 
 test("a duplicate chunk frame is ignored and counted", async () => {
@@ -392,7 +418,7 @@ test("teacher: a second incoming datachannel is closed and ignored", async () =>
   const rtc = new FakeRtcFactory();
   const t = new PeerSession({
     role: "teacher",
-    ws: 7,
+    ws: "7",
     rtc,
     clock: new FakeClock(),
     timers: TIMERS,
@@ -420,7 +446,7 @@ test("inbound fires for every valid frame from the peer, never for refused ones"
   s.on("inbound", () => inbound++);
   dc.receive(JSON.stringify({ t: "hb-ack", seq: 1, ts: 0 }));
   dc.receive(JSON.stringify({ t: "hb", seq: 2, ts: 0 }));
-  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: 7, appVersion: "t1", ua: "mac" }));
+  dc.receive(JSON.stringify({ t: "hello", role: "teacher", ws: "7", appVersion: "t1", ua: "mac" }));
   dc.receive(JSON.stringify({ t: "cmd", cmd: "ping" }));
   assert.equal(inbound, 4, "hb-ack, hb, hello and cmd are all proof of life");
   dc.receive("not json");

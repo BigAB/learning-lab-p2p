@@ -1,6 +1,7 @@
 import type { HelloMessage, LabMessage } from "../schemas/protocol";
 import { LabMessageSchema, MAX_FRAME_BYTES } from "../schemas/protocol";
 import type { SdpPayload } from "../schemas/sdpPayload";
+import { wsKey } from "../schemas/ws";
 import { chunkMessage, Reassembler } from "./chunker";
 import type { Clock, TimerHandle } from "./clock";
 import { Emitter } from "./events";
@@ -29,7 +30,7 @@ export const DEFAULT_TIMERS: SessionTimers = {
 
 export interface PeerSessionOpts {
   role: "student" | "teacher";
-  ws: number;
+  ws: string;
   rtc: RtcFactory;
   clock: Clock;
   timers?: Partial<SessionTimers>;
@@ -56,7 +57,7 @@ export type PeerSessionEvents = {
  */
 export class PeerSession extends Emitter<PeerSessionEvents> {
   readonly role: "student" | "teacher";
-  readonly ws: number;
+  readonly ws: string;
   state: SessionState = "idle";
   ignoredCount = 0;
   lastRtt: number | undefined;
@@ -101,7 +102,7 @@ export class PeerSession extends Emitter<PeerSessionEvents> {
       if (remote.role !== "answer") throw new Error("student expects an answer");
       // The courier walks several answers around the room; scanning the wrong one must be a
       // plain refusal, not a half-applied remote description on a PC that can never connect.
-      if (remote.ws !== this.ws)
+      if (wsKey(remote.ws) !== wsKey(this.ws))
         throw new Error(`This code is for workstation ${remote.ws}, not ${this.ws}`);
       if (!this.pc) throw new Error("no peer connection");
       await this.pc.setRemoteDescription({ type: "answer", sdp: buildSdp(remote) });
